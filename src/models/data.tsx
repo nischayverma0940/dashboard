@@ -48,3 +48,13 @@ export const departments: string[] = [
   "Mathematics",
   "Humanities and Social Sciences"
 ]
+
+export const categoryType: Record<string, string[]> = {
+  "Recurring": [
+    "OH-31 Grant-in-Aid General",
+    "OH-36 Grant-in-Aid Salary"
+  ],
+  "Non-Recurring": [
+    "OH-35 Grants for Creation of Capital Assets"
+  ]
+}
