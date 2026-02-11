@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { DataTable } from './DataTable'
 import type { Column, Filter } from './DataTable'
@@ -14,12 +15,9 @@ const randomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.lengt
 const randomDate = (year = 2024) => new Date(year, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1)
 const randomAmount = (max: number) => parseFloat((Math.random() * max).toFixed(2))
 
-const formatINR = (value: number) => {
-  const absVal = Math.abs(value)
-  return `${value < 0 ? "- " : ""}₹${absVal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
-}
-
 const categoryColors = ["blue", "green", "orange"]
+
+type Scale = "absolute" | "thousands" | "lakhs" | "crores";
 
 const chartConfig = {
   amount: { label: "Expenditure" },
@@ -74,10 +72,33 @@ const tabs: { value: Tab; label: string }[] = [
 ]
 
 export function Dashboard() {
+  const [scale, setScale] = useState<Scale>("absolute")
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
   const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
+
+  const formatINR = (value: number) => {
+    let displayValue = value;
+    let suffix = "";
+
+    if (scale === "thousands") {
+      displayValue = value / 1000;
+      suffix = " K";
+    } else if (scale === "lakhs") {
+      displayValue = value / 100000;
+      suffix = " L";
+    } else if (scale === "crores") {
+      displayValue = value / 10000000;
+      suffix = " Cr";
+    }
+
+    const absVal = Math.abs(displayValue);
+    return `${value < 0 ? "- " : ""}₹${absVal.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}${suffix}`;
+  };
 
   const toggleRow = (category: string) => {
     setExpandedRows(prev => {
@@ -302,7 +323,8 @@ export function Dashboard() {
         <h1 className="text-4xl flex flex-row justify-center w-full font-bold pb-16">Ministry Grants Receipts & Expenditures</h1>
       </div>
 
-      <div className="flex gap-2 mb-6">
+
+      <div className="flex flex-row items-end gap-2 mb-6">
         {tabs.map((tab) => (
           <Button
             key={tab.value}
@@ -312,6 +334,27 @@ export function Dashboard() {
             {tab.label}
           </Button>
         ))}
+        <div className="flex flex-row w-full justify-end">
+          <div className="flex flex-col items-end">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Currency Scale</span>
+            <div className="inline-flex px-1 py-1 bg-muted rounded-lg border">
+              {(["absolute", "thousands", "lakhs", "crores"] as Scale[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setScale(s)}
+                  className={cn(
+                    "px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize",
+                    scale === s 
+                      ? "bg-background text-foreground" 
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {activeTab === "receipts" && (
