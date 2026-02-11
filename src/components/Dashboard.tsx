@@ -17,7 +17,7 @@ const formatINR = (value: number) => {
 }
 
 type Receipt = { date: Date; sanctionOrder: string; category: string; amount: number; attachment?: string }
-type Expenditure = { date: Date; sanctionOrder: string; paymentOrder: string; category: string; subCategory: string; department: string; amount: number; attachment?: string }
+type Expenditure = { date: Date; billNo: string; voucherNo: string; category: string; subCategory: string; department: string; amount: number; attachment?: string }
 
 const generateReceipts = (count: number): Receipt[] =>
   Array.from({ length: count }, () => ({
@@ -34,8 +34,8 @@ const generateExpenditures = (count: number): Expenditure[] =>
     const subCategories = subCategoriesMap[category]
     return {
       date: randomDate(),
-      sanctionOrder: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `SO-${1000 + Math.floor(Math.random() * 9000)}`,
-      paymentOrder: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `PO-${1000 + Math.floor(Math.random() * 9000)}`,
+      billNo: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `BN-${1000 + Math.floor(Math.random() * 9000)}`,
+      voucherNo: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `VN-${1000 + Math.floor(Math.random() * 9000)}`,
       category,
       subCategory: randomItem(subCategories),
       department: category === "OH-35 Grants for Creation of Capital Assets"
@@ -59,7 +59,7 @@ const receiptColumns: Column<Receipt>[] = [
       : String(d)
   },
   { key: "sanctionOrder", label: "Sanction Order", sortable: true },
-  { key: "category", label: "Category", sortable: true },
+  { key: "category", label: "OH Category", sortable: true },
   {
     key: "amount",
     label: "Amount",
@@ -85,10 +85,10 @@ const expenditureColumns: Column<Expenditure>[] = [
       ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
       : String(d)
   },
-  { key: "sanctionOrder", label: "Sanction Order", sortable: true },
-  { key: "paymentOrder", label: "Payment Order", sortable: true },
-  { key: "category", label: "Category", sortable: true },
-  { key: "subCategory", label: "Sub-category", sortable: true },
+  { key: "billNo", label: "Bill No.", sortable: true },
+  { key: "voucherNo", label: "Voucher No.", sortable: true },
+  { key: "category", label: "OH Category", sortable: true },
+  { key: "subCategory", label: "OH Sub-category", sortable: true },
   { key: "department", label: "Department", sortable: true },
   {
     key: "amount",
@@ -149,8 +149,8 @@ const receiptFilters: Filter<Receipt>[] = [
 ]
 
 const expenditureFilters: Filter<Expenditure>[] = [
-  { key: "sanctionOrder", type: "text", label: "Sanction Order", placeholder: "Search Sanction Order" },
-  { key: "paymentOrder", type: "text", label: "Payment Order", placeholder: "Search Payment Order" },
+  { key: "billNo", type: "text", label: "Bill No.", placeholder: "Search Bill No." },
+  { key: "voucherNo", type: "text", label: "Voucher No.", placeholder: "Search Voucher No." },
   { key: "category", type: "select", label: "Category", options: categories },
   { key: "subCategory", type: "select", label: "Sub-category" },
   { key: "expenditureMin", type: "number", label: "Min Expenditure", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
