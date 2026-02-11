@@ -2,8 +2,10 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { DataTable } from './/DataTable'
+import { DataTable } from './DataTable'
 import type { Column, Filter } from './DataTable'
+import { EditDeleteDialog } from './EditDeleteDialog'
+import { AddEntryDialog } from './AddEntryDialog'
 
 import { categories, subCategoriesMap, departments } from '@/models/data'
 
@@ -46,66 +48,6 @@ const generateExpenditures = (count: number): Expenditure[] =>
     }
   })
 
-const receipts = generateReceipts(100)
-const expenditures = generateExpenditures(150)
-
-const receiptColumns: Column<Receipt>[] = [
-  {
-    key: "date",
-    label: "Date",
-    sortable: true,
-    format: d => d instanceof Date
-      ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-      : String(d)
-  },
-  { key: "sanctionOrder", label: "Sanction Order", sortable: true },
-  { key: "category", label: "OH Category", sortable: true },
-  {
-    key: "amount",
-    label: "Amount",
-    sortable: true,
-    className: "text-right",
-    format: a => typeof a === "number" ? formatINR(a) : "-"
-  },
-  {
-    key: "attachment",
-    label: "Attachment",
-    format: url => url
-      ? <a href={String(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">View</a>
-      : "-"
-  }
-]
-
-const expenditureColumns: Column<Expenditure>[] = [
-  {
-    key: "date",
-    label: "Date",
-    sortable: true,
-    format: d => d instanceof Date
-      ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-      : String(d)
-  },
-  { key: "billNo", label: "Bill No.", sortable: true },
-  { key: "voucherNo", label: "Voucher No.", sortable: true },
-  { key: "category", label: "OH Category", sortable: true },
-  { key: "subCategory", label: "OH Sub-category", sortable: true },
-  { key: "department", label: "Department", sortable: true },
-  {
-    key: "amount",
-    label: "Amount",
-    sortable: true,
-    className: "text-right",
-    format: a => typeof a === "number" ? formatINR(a) : "-"
-  },
-  {
-    key: "attachment",
-    label: "Attachment",
-    format: url => url
-      ? <a href={String(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">View</a>
-      : "-"
-  }
-]
-
 type SubCategorySummary = {
   subCategory: string
   totalReceipts: number
@@ -121,43 +63,7 @@ type CategorySummary = {
   subCategories: SubCategorySummary[]
 }
 
-const generateCategorySummary = (): CategorySummary[] => {
-  return categories.map(category => {
-    const totalReceipts = receipts.filter(r => r.category === category).reduce((sum, r) => sum + r.amount, 0)
-    const totalExpenditures = expenditures.filter(e => e.category === category).reduce((sum, e) => sum + e.amount, 0)
-    const subs = subCategoriesMap[category] ?? []
-    const subCategories: SubCategorySummary[] = subs.map(sub => {
-      const subReceipts = 0
-      const subExpenditure = expenditures
-        .filter(e => e.category === category && e.subCategory === sub)
-        .reduce((sum, e) => sum + e.amount, 0)
-      return { subCategory: sub, totalReceipts: subReceipts, totalExpenditure: subExpenditure, balance: subReceipts - subExpenditure }
-    })
-    return { category, totalReceipts, totalExpenditure: totalExpenditures, balance: totalReceipts - totalExpenditures, subCategories }
-  })
-}
-
 const allSubCategories = Object.values(subCategoriesMap).flat()
-
-const receiptFilters: Filter<Receipt>[] = [
-  { key: "sanctionOrder", type: "text", label: "Sanction Order", placeholder: "Search Sanction Order" },
-  { key: "category", type: "select", label: "Category", options: categories },
-  { key: "amountMin", type: "number", label: "Min Amount", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
-  { key: "amountMax", type: "number", label: "Max Amount", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
-  { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
-  { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
-]
-
-const expenditureFilters: Filter<Expenditure>[] = [
-  { key: "billNo", type: "text", label: "Bill No.", placeholder: "Search Bill No." },
-  { key: "voucherNo", type: "text", label: "Voucher No.", placeholder: "Search Voucher No." },
-  { key: "category", type: "select", label: "Category", options: categories },
-  { key: "subCategory", type: "select", label: "Sub-category" },
-  { key: "expenditureMin", type: "number", label: "Min Expenditure", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
-  { key: "expenditureMax", type: "number", label: "Max Expenditure", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
-  { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
-  { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
-]
 
 type Tab = "receipts" | "expenditures" | "summary"
 
@@ -167,39 +73,223 @@ const tabs: { value: Tab; label: string }[] = [
   { value: "expenditures", label: "Expenditures" },
 ]
 
-const summaryCategoryData = generateCategorySummary()
-
 export function Dashboard() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
+  const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
 
   const toggleRow = (category: string) => {
     setExpandedRows(prev => {
       const next = new Set(prev)
-
       if (next.has(category)) {
         next.delete(category)
       } else {
         next.add(category)
       }
-
       return next
     })
   }
 
   const canModify = true
 
+  const handleReceiptAdd = (newReceipt: Receipt) => {
+    setReceipts(prev => [newReceipt, ...prev])
+  }
+
+  const handleReceiptSave = (index: number) => (updatedReceipt: Receipt) => {
+    setReceipts(prev => {
+      const newReceipts = [...prev]
+      newReceipts[index] = updatedReceipt
+      return newReceipts
+    })
+  }
+
+  const handleReceiptDelete = (index: number) => () => {
+    setReceipts(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleExpenditureAdd = (newExpenditure: Expenditure) => {
+    setExpenditures(prev => [newExpenditure, ...prev])
+  }
+
+  const handleExpenditureSave = (index: number) => (updatedExpenditure: Expenditure) => {
+    setExpenditures(prev => {
+      const newExpenditures = [...prev]
+      newExpenditures[index] = updatedExpenditure
+      return newExpenditures
+    })
+  }
+
+  const handleExpenditureDelete = (index: number) => () => {
+    setExpenditures(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const receiptFields = [
+    { key: "date", label: "Date", type: "date" as const, required: true },
+    { key: "sanctionOrder", label: "Sanction Order", type: "text" as const, required: true },
+    { key: "category", label: "OH Category", type: "select" as const, options: categories, required: true },
+    { key: "amount", label: "Amount", type: "number" as const, required: true },
+    { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
+  ]
+
+  const expenditureFields = [
+    { key: "date", label: "Date", type: "date" as const, required: true },
+    { key: "billNo", label: "Bill No.", type: "text" as const, required: true },
+    { key: "voucherNo", label: "Voucher No.", type: "text" as const, required: true },
+    { key: "category", label: "OH Category", type: "select" as const, options: categories, required: true },
+    { 
+      key: "subCategory", 
+      label: "OH Sub-category", 
+      type: "select" as const, 
+      required: true,
+      dependsOn: "category",
+      getDynamicOptions: (formData: any) => formData.category ? subCategoriesMap[formData.category] : []
+    },
+    { key: "department", label: "Department", type: "select" as const, options: ["-", ...departments.slice(1)], required: true },
+    { key: "amount", label: "Amount", type: "number" as const, required: true },
+    { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
+  ]
+
+  const receiptColumns: Column<Receipt & { _index: number }>[] = [
+    {
+      key: "date",
+      label: "Date",
+      sortable: true,
+      format: d => d instanceof Date
+        ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : String(d)
+    },
+    { key: "sanctionOrder", label: "Sanction Order", sortable: true },
+    { key: "category", label: "OH Category", sortable: true },
+    {
+      key: "amount",
+      label: "Amount",
+      sortable: true,
+      className: "text-right",
+      format: a => typeof a === "number" ? formatINR(a) : "-"
+    },
+    {
+      key: "attachment",
+      label: "Attachment",
+      format: url => url
+        ? <a href={String(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">View</a>
+        : "-"
+    },
+    {
+      key: "_index",
+      label: "Actions",
+      format: (_, row) => (
+        <EditDeleteDialog
+          row={row}
+          fields={receiptFields}
+          onSave={handleReceiptSave(row._index)}
+          onDelete={handleReceiptDelete(row._index)}
+          formatDisplay={(key, value) => {
+            if (key === "date" && value instanceof Date) {
+              return value.toISOString().split('T')[0]
+            }
+            return String(value ?? "")
+          }}
+        />
+      )
+    }
+  ]
+
+  const expenditureColumns: Column<Expenditure & { _index: number }>[] = [
+    {
+      key: "date",
+      label: "Date",
+      sortable: true,
+      format: d => d instanceof Date
+        ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : String(d)
+    },
+    { key: "billNo", label: "Bill No.", sortable: true },
+    { key: "voucherNo", label: "Voucher No.", sortable: true },
+    { key: "category", label: "OH Category", sortable: true },
+    { key: "subCategory", label: "OH Sub-category", sortable: true },
+    { key: "department", label: "Department", sortable: true },
+    {
+      key: "amount",
+      label: "Amount",
+      sortable: true,
+      className: "text-right",
+      format: a => typeof a === "number" ? formatINR(a) : "-"
+    },
+    {
+      key: "attachment",
+      label: "Attachment",
+      format: url => url
+        ? <a href={String(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">View</a>
+        : "-"
+    },
+    {
+      key: "_index",
+      label: "Actions",
+      format: (_, row) => (
+        <EditDeleteDialog
+          row={row}
+          fields={expenditureFields}
+          onSave={handleExpenditureSave(row._index)}
+          onDelete={handleExpenditureDelete(row._index)}
+          formatDisplay={(key, value) => {
+            if (key === "date" && value instanceof Date) {
+              return value.toISOString().split('T')[0]
+            }
+            return String(value ?? "")
+          }}
+        />
+      )
+    }
+  ]
+
+  const receiptFilters: Filter<Receipt>[] = [
+    { key: "sanctionOrder", type: "text", label: "Sanction Order", placeholder: "Search Sanction Order" },
+    { key: "category", type: "select", label: "Category", options: categories },
+    { key: "amountMin", type: "number", label: "Min Amount", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
+    { key: "amountMax", type: "number", label: "Max Amount", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
+    { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
+    { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
+  ]
+
+  const expenditureFilters: Filter<Expenditure>[] = [
+    { key: "billNo", type: "text", label: "Bill No.", placeholder: "Search Bill No." },
+    { key: "voucherNo", type: "text", label: "Voucher No.", placeholder: "Search Voucher No." },
+    { key: "category", type: "select", label: "Category", options: categories },
+    { key: "subCategory", type: "select", label: "Sub-category" },
+    { key: "expenditureMin", type: "number", label: "Min Expenditure", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
+    { key: "expenditureMax", type: "number", label: "Max Expenditure", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
+    { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
+    { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
+  ]
+
+  const generateCategorySummary = (): CategorySummary[] => {
+    return categories.map(category => {
+      const totalReceipts = receipts.filter(r => r.category === category).reduce((sum, r) => sum + r.amount, 0)
+      const totalExpenditures = expenditures.filter(e => e.category === category).reduce((sum, e) => sum + e.amount, 0)
+      const subs = subCategoriesMap[category] ?? []
+      const subCategories: SubCategorySummary[] = subs.map(sub => {
+        const subReceipts = 0
+        const subExpenditure = expenditures
+          .filter(e => e.category === category && e.subCategory === sub)
+          .reduce((sum, e) => sum + e.amount, 0)
+        return { subCategory: sub, totalReceipts: subReceipts, totalExpenditure: subExpenditure, balance: subReceipts - subExpenditure }
+      })
+      return { category, totalReceipts, totalExpenditure: totalExpenditures, balance: totalReceipts - totalExpenditures, subCategories }
+    })
+  }
+
+  const summaryCategoryData = generateCategorySummary()
+
+  const receiptsWithIndex = receipts.map((r, i) => ({ ...r, _index: i }))
+  const expendituresWithIndex = expenditures.map((e, i) => ({ ...e, _index: i }))
+
   return (
     <>
       <div className="flex items-center justify-between pb-4">
-        <h1 className="text-4xl font-bold">Dashboard</h1>
-        {canModify && (
-          <div className="flex gap-2">
-            <Button onClick={() => navigate("/add")}>Add Entry</Button>
-            <Button variant="destructive" onClick={() => navigate("/remove")}>Delete Entry</Button>
-          </div>
-        )}
+        <h1 className="text-4xl flex flex-row justify-center w-full font-bold pb-16">Ministry Grants Receipts & Expenditures</h1>
       </div>
 
       <div className="flex gap-2 mb-6">
@@ -216,22 +306,42 @@ export function Dashboard() {
 
       {/* Tab content */}
       {activeTab === "receipts" && (
-        <DataTable
-          data={receipts}
-          columns={receiptColumns}
-          filters={receiptFilters}
-          defaultSort="date"
-        />
+        <>
+          <div className="flex justify-end">
+            <AddEntryDialog
+              fields={receiptFields}
+              onAdd={handleReceiptAdd}
+              title="Add Receipt"
+              buttonLabel="Add Receipt"
+            />
+          </div>
+          <DataTable
+            data={receiptsWithIndex}
+            columns={receiptColumns}
+            filters={receiptFilters}
+            defaultSort="date"
+          />
+        </>
       )}
 
       {activeTab === "expenditures" && (
-        <DataTable
-          data={expenditures}
-          columns={expenditureColumns}
-          filters={expenditureFilters}
-          defaultSort="date"
-          dynamicSelectOptions={{ subCategory: (fv) => fv.category ? subCategoriesMap[fv.category] : allSubCategories }}
-        />
+        <>
+          <div className="flex justify-end">
+            <AddEntryDialog
+              fields={expenditureFields}
+              onAdd={handleExpenditureAdd}
+              title="Add Expenditure"
+              buttonLabel="Add Expenditure"
+            />
+          </div>
+          <DataTable
+            data={expendituresWithIndex}
+            columns={expenditureColumns}
+            filters={expenditureFilters}
+            defaultSort="date"
+            dynamicSelectOptions={{ subCategory: (fv) => fv.category ? subCategoriesMap[fv.category] : allSubCategories }}
+          />
+        </>
       )}
 
       {activeTab === "summary" && (() => {
