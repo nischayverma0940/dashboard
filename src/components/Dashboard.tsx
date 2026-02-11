@@ -317,12 +317,25 @@ export function Dashboard() {
   const receiptsWithIndex = receipts.map((r, i) => ({ ...r, _index: i }))
   const expendituresWithIndex = expenditures.map((e, i) => ({ ...e, _index: i }))
 
+  const grandTotals = useMemo(() => {
+    return summaryCategoryData.reduce(
+      (acc, row) => {
+        acc.totalReceipts += row.totalReceipts
+        acc.totalExpenditure += row.totalExpenditure
+        acc.balance += row.balance
+        return acc
+      },
+      { totalReceipts: 0, totalExpenditure: 0, balance: 0 }
+    )
+  }, [summaryCategoryData])
+
+  const grandPct = grandTotals.totalReceipts > 0 ? Math.min((grandTotals.totalExpenditure / grandTotals.totalReceipts) * 100, 100): 0
+
   return (
     <>
       <div className="flex items-center justify-between pb-4">
         <h1 className="text-4xl flex flex-row justify-center w-full font-bold pb-16">Ministry Grants Receipts & Expenditures</h1>
       </div>
-
 
       <div className="flex flex-row items-end gap-2 mb-6">
         {tabs.map((tab) => (
@@ -358,15 +371,18 @@ export function Dashboard() {
       </div>
 
       {activeTab === "receipts" && (
-        <>
-          <div className="flex justify-end">
-            <AddEntryDialog
-              fields={receiptFields}
-              onAdd={handleReceiptAdd}
-              title="Add Receipt"
-              buttonLabel="Add Receipt"
-            />
-          </div>
+        <> {
+          canModify && (
+            <div className="flex justify-end">
+              <AddEntryDialog
+                fields={receiptFields}
+                onAdd={handleReceiptAdd}
+                title="Add Receipt"
+                buttonLabel="Add Receipt"
+              />
+            </div>
+          )
+        }
           <DataTable
             data={receiptsWithIndex}
             columns={receiptColumns}
@@ -377,15 +393,18 @@ export function Dashboard() {
       )}
 
       {activeTab === "expenditures" && (
-        <>
-          <div className="flex justify-end">
-            <AddEntryDialog
-              fields={expenditureFields}
-              onAdd={handleExpenditureAdd}
-              title="Add Expenditure"
-              buttonLabel="Add Expenditure"
-            />
-          </div>
+        <> {
+          canModify && (
+            <div className="flex justify-end">
+                <AddEntryDialog
+                  fields={expenditureFields}
+                  onAdd={handleExpenditureAdd}
+                  title="Add Expenditure"
+                  buttonLabel="Add Expenditure"
+                />
+            </div>
+          )
+          }
           <DataTable
             data={expendituresWithIndex}
             columns={expenditureColumns}
@@ -481,6 +500,47 @@ export function Dashboard() {
                   )
                 })}
               </tbody>
+              <tfoot className="border-t bg-muted/70">
+                <tr>
+                  <td className="px-4 py-4" />
+                  <td className="px-4 py-4 font-semibold">
+                    <div className="flex flex-col gap-2">
+                      <span>Grand Total</span>
+
+                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full transition-all duration-500"
+                          style={{
+                            width: `${grandPct}%`,
+                            backgroundColor:
+                              grandTotals.balance < 0 ? "red-500" : "black",
+                          }}
+                        />
+                      </div>
+
+                      <span className="text-xs text-muted-foreground">
+                        {grandPct.toFixed(1)}% utilised
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-4 text-right font-semibold">
+                    {formatINR(grandTotals.totalReceipts)}
+                  </td>
+
+                  <td className="px-4 py-4 text-right font-semibold">
+                    {formatINR(grandTotals.totalExpenditure)}
+                  </td>
+
+                  <td
+                    className={`px-4 py-4 text-right font-bold ${
+                      grandTotals.balance < 0 ? "text-red-700" : "text-green-700"
+                    }`}
+                  >
+                    {formatINR(grandTotals.balance)}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
