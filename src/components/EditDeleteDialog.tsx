@@ -93,7 +93,7 @@ export function EditDeleteDialog<T extends Record<string, any>>({
           <div className="grid gap-4 py-4">
             {fields.map(field => (
               <div key={field.key} className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor={field.key} className="text-right">
+                <Label htmlFor={field.key}>
                   {field.label}
                 </Label>
                 <div className="col-span-3">
