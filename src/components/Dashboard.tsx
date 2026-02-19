@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx"
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useRef, useEffect } from "react"
 import { ChevronDown, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import type { Column } from "./DataTable"
 import { EditDeleteDialog } from "./EditDeleteDialog"
 import { AddEntryDialog } from "./AddEntryDialog"
 import type { LabelProps } from "recharts"
-import { Bar, BarChart, Cell, XAxis } from "recharts"
+import { Bar, BarChart, Cell, XAxis, PieChart, Pie, Tooltip as RechartsTooltip } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { categories, subCategoriesMap, departments } from "@/models/data"
 
@@ -83,6 +83,15 @@ const TABS: { value: Tab; label: string }[] = [
 
 const SCALES: Scale[] = ["absolute", "thousands", "lakhs", "crores"]
 const CATEGORY_COLORS = ["blue", "green", "orange"]
+
+const RICH_COLORS = CATEGORY_COLORS.map(color => ({
+  solid: color,
+}))
+
+const categoryLegend = categories.map((cat, i) => ({
+  name: cat,
+  color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+}))
 
 const chartConfig = { amount: { label: "Expenditure" } } satisfies ChartConfig
 
@@ -220,6 +229,7 @@ export function Dashboard() {
   const [scale, setScale] = useState<Scale>("absolute")
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [summaryFilter, setSummaryFilter] = useState<string | null>(null)
 
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
   const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(21))
@@ -257,6 +267,22 @@ export function Dashboard() {
   const [selectedSubCategory, setSelectedSubCategory] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState("")
   const [selectedReceiptCategory, setSelectedReceiptCategory] = useState("")
+
+  const chartWrapperRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+
+  useEffect(() => {
+    const el = chartWrapperRef.current
+    if (!el) return
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+    observer.observe(el)
+    setContainerWidth(el.clientWidth)
+    return () => observer.disconnect()
+  }, [])
 
   const canModify = true
 
@@ -483,6 +509,13 @@ export function Dashboard() {
     return summaryCategoryData.filter(c => expandedRows.has(c.category)).flatMap(c => c.subCategories)
   }, [summaryCategoryData, expandedRows])
 
+  const dynamicBarSize = useMemo(() => {
+    if (!containerWidth || chartData.length === 0) return 48
+    const slotWidth = containerWidth / chartData.length
+    const barWidth = slotWidth * 0.75
+    return Math.max(8, Math.min(barWidth, 80))
+  }, [containerWidth, chartData.length])
+
   const financialYears = useMemo(() => {
     const dates = [...receipts.map(r => r.date), ...expenditures.map(e => e.date), ...allocations.map(a => a.date)]
     return Array.from(new Set(dates.map(getFY))).sort().reverse()
@@ -603,6 +636,58 @@ export function Dashboard() {
       Attachment: r.attachment ?? "",
     }))
   }, [filteredReportData, reportType])
+
+  const innerPieData = useMemo(() =>
+    summaryCategoryData.map((row, i) => ({
+      name: row.category,
+      value: row.totalReceipts,
+      fill: RICH_COLORS[i % RICH_COLORS.length].solid,
+    })),
+    [summaryCategoryData])
+
+
+  const outerPieData = useMemo(() =>
+    summaryCategoryData.flatMap((row, i) => {
+      const opacity = (color: string, alpha: number) => {
+        const cvtStringToHex = (str: string) => {
+          const ctx = document.createElement("canvas").getContext("2d")
+          if (!ctx) return "000000"
+          ctx.fillStyle = str
+          return ctx.fillStyle.replace("#", "")
+        }
+        const hex = cvtStringToHex(color)
+        const r = parseInt(hex.substring(0, 2), 16)
+        const g = parseInt(hex.substring(2, 4), 16)
+        const b = parseInt(hex.substring(4, 6), 16)
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`
+      }
+      const { solid } = RICH_COLORS[i % RICH_COLORS.length]
+      const totalReceipts = Math.max(0, row.totalReceipts)
+      const expVal = Math.min(Math.max(0, row.totalExpenditure), totalReceipts || row.totalExpenditure)
+      const balVal = Math.max(0, totalReceipts - expVal)
+      return [
+        { name: row.category, label: "Expenditure", value: expVal, fill: solid, category: row.category },
+        { name: row.category, label: "Balance", value: balVal, fill: opacity(solid, 0.64), category: row.category },
+      ]
+    }),
+    [summaryCategoryData])
+
+  const handlePieClick = (category: string) => {
+    setSummaryFilter(prev => prev === category ? null : category)
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      for (const cat of next) {
+        if (cat !== category) next.delete(cat)
+      }
+      return next
+    })
+  }
+
+  const visibleSummaryCategoryData = useMemo(() =>
+    summaryFilter
+      ? summaryCategoryData.filter(r => r.category === summaryFilter)
+      : summaryCategoryData,
+    [summaryCategoryData, summaryFilter])
 
   const renderAllocationCard = (
     table: typeof allocationTables[number],
@@ -1283,84 +1368,208 @@ export function Dashboard() {
 
       {activeTab === "summary" && (
         <div className="space-y-2">
-          <div className="flex flex-col items-center px-8 py-4 rounded-lg border">
-            <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
-            <ChartContainer
-              config={chartConfig}
-              style={{
-                height: 384,
-                width: Math.max(chartData.length * 60, 400),
-              }}
-            >
-              <BarChart
-                data={chartData}
-                margin={{ top: 90, right: 16, left: 16, bottom: 28 }}
-                barCategoryGap={12}
-                barSize={48}
+          <div className="flex flex-col xl:flex-row gap-2 items-stretch">
+            <div className="flex-1 flex flex-col items-center px-8 py-4 rounded-lg border" ref={chartWrapperRef}>
+              <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
+              <ChartContainer
+                config={chartConfig}
+                style={{ height: 384, width: "100%" }}
               >
-                <ChartTooltip
-                  cursor={{ fill: 'currentColor', opacity: 0.06, rx: 6 }}
-                  content={
-                    <ChartTooltipContent
-                      hideLabel={true}
-                      formatter={(value, _, item) => (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-xs font-bold">{item.payload.parentCategory}</span>
-                          <span className="text-xs font-semibold">{item.payload.subCategory}</span>
-                          <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
-                        </div>
-                      )}
-                    />
-                  }
-                />
-                <Bar
-                  dataKey="totalExpenditure"
-                  radius={[6, 6, 0, 0]}
-                  maxBarSize={48}
-                  label={(props: LabelProps) => {
-                    const x = Number(props.x ?? 0)
-                    const y = Number(props.y ?? 0)
-                    const width = Number(props.width ?? 0)
-                    const value = Number(props.value ?? 0)
-                    if (!value) return <></>
-                    const cx = x + width / 2
-                    return (
-                      <text
-                        x={cx}
-                        y={y - 8}
-                        textAnchor="start"
-                        dominantBaseline="middle"
-                        transform={`rotate(-90, ${cx}, ${y - 8})`}
-                        style={{
-                          fontSize: '10px',
-                          fill: '#6b7280',
-                          fontVariantNumeric: 'tabular-nums',
-                          letterSpacing: '0.01em',
-                        }}
-                      >
-                        {formatINR(value)}
-                      </text>
-                    )
-                  }}
+                <BarChart
+                  data={chartData}
+                  margin={{ top: 96, right: 16, left: 16, bottom: 0 }}
+                  barCategoryGap="20%"
+                  barSize={dynamicBarSize}
                 >
-                  {chartData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={CATEGORY_COLORS[categories.indexOf(entry.parentCategory) % CATEGORY_COLORS.length]}
-                      fillOpacity={0.85}
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        hideLabel={true}
+                        formatter={(value, _, item) => (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-bold">{item.payload.parentCategory}</span>
+                            <span className="text-xs font-semibold">{item.payload.subCategory}</span>
+                            <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
+                          </div>
+                        )}
+                      />
+                    }
+                  />
+                  <Bar
+                    dataKey="totalExpenditure"
+                    radius={[6, 6, 0, 0]}
+                    label={(props: LabelProps) => {
+                      const x = Number(props.x ?? 0)
+                      const y = Number(props.y ?? 0)
+                      const width = Number(props.width ?? 0)
+                      const value = Number(props.value ?? 0)
+                      if (!value) return <></>
+                      const cx = x + width / 2
+                      return (
+                        <text
+                          x={cx}
+                          y={y - 8}
+                          textAnchor="start"
+                          dominantBaseline="middle"
+                          transform={`rotate(-90, ${cx}, ${y - 8})`}
+                          style={{
+                            fontSize: '11px',
+                            fontVariantNumeric: 'tabular-nums',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          {formatINR(value)}
+                        </text>
+                      )
+                    }}
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid}
+                        opacity={summaryFilter && summaryFilter !== entry.parentCategory ? 0.50 : 1}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => handlePieClick(entry.parentCategory)}
+                      />
+                    ))}
+                  </Bar>
+                  <XAxis
+                    dataKey="subCategory"
+                    tickFormatter={(v: string) => v.slice(0, 5)}
+                    tick={{ fontSize: 11, fontWeight: 700 }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                  />
+                </BarChart>
+              </ChartContainer>
+              <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+                {categoryLegend.map((item, i) => (
+                  <button
+                    key={item.name}
+                    onClick={() => handlePieClick(item.name)}
+                    className={cn(
+                      "flex items-center gap-2 text-xs font-medium rounded px-2 py-1 transition-all",
+                      summaryFilter && summaryFilter !== item.name ? "opacity-40" : "opacity-100",
+                      summaryFilter === item.name ? "bg-muted" : "hover:bg-muted/80"
+                    )}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-lg"
+                      style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
                     />
-                  ))}
-                </Bar>
-                <XAxis
-                  dataKey="subCategory"
-                  tickFormatter={(v: string) => v.slice(0, 5)}
-                  tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                />
-              </BarChart>
-            </ChartContainer>
+                    <span>{item.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="xl:w-80 hidden xl:flex xl:flex-col items-center px-6 py-4 rounded-lg border shrink-0">
+              <h3 className="text-md font-semibold mb-8 text-muted-foreground self-start">Receipts vs Expenditure</h3>
+
+              <div className="relative flex flex-col h-full items-center justify-center" style={{ height: 260, width: 260 }}>
+                <PieChart width={284} height={284}>
+                  <Pie
+                    data={innerPieData}
+                    cx={125}
+                    cy={125}
+                    innerRadius={48}
+                    outerRadius={84}
+                    dataKey="value"
+                    stroke="none"
+                    activeShape={false}
+                  >
+                    {innerPieData.map((entry, index) => (
+                      <Cell
+                        key={`inner-${index}`}
+                        fill={entry.fill}
+                        opacity={summaryFilter && summaryFilter !== entry.name ? 0.50 : 1}
+                      />
+                    ))}
+                  </Pie>
+
+                  <Pie
+                    data={outerPieData}
+                    cx={125}
+                    cy={125}
+                    innerRadius={88}
+                    outerRadius={128}
+                    dataKey="value"
+                    stroke="none"
+                    activeShape={false}
+                  >
+                    {outerPieData.map((entry, index) => (
+                      <Cell
+                        key={`outer-${index}`}
+                        fill={entry.fill}
+                        opacity={summaryFilter && summaryFilter !== entry.category ? 0.50 : 1}
+                      />
+                    ))}
+                  </Pie>
+
+                  <RechartsTooltip
+                    cursor={false}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload as typeof outerPieData[number] & typeof innerPieData[number]
+                      if (d.label === "Balance") return null
+                      return (
+                        <div className="rounded-lg bg-background px-3 py-2 text-xs space-y-1">
+                          <p className="font-semibold text-foreground leading-tight" style={{ maxWidth: 180 }}>{d.name}</p>
+                          {d.label && (
+                            <p className="text-muted-foreground">{d.label}</p>
+                          )}
+                          <p className="font-bold text-primary text-sm">{formatINR(d.value)}</p>
+                        </div>
+                      )
+                    }}
+                  />
+                </PieChart>
+              </div>
+
+              <div className="mt-8 w-full space-y-1">
+                <div className="w-full flex flex-row justify-between text-xs text-muted-foreground border-b pb-2 px-2">
+                  <span>Category</span>
+                  <span>Total Receipts</span>
+                </div>
+                <div className="pt-1 space-y-1">
+                  {categories.map((cat, i) => {
+                    const row = summaryCategoryData[i]
+                    const isActive = !summaryFilter || summaryFilter === cat
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => handlePieClick(cat)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-2 py-1 rounded-md text-xs transition-all",
+                          isActive ? "opacity-100" : "opacity-64",
+                          summaryFilter === cat ? "bg-muted font-semibold" : "hover:bg-muted/80"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
+                          />
+                          <span className="truncate text-left" style={{ maxWidth: 140 }}>{cat.slice(0, 5)}</span>
+                        </div>
+                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">{formatINR(row.totalReceipts)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {summaryFilter && (
+                  <button
+                    onClick={() => setSummaryFilter(null)}
+                    className="w-full text-xs text-center text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 pt-1"
+                  >
+                    <X className="h-3 w-3" /> Clear filter
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="overflow-hidden border rounded-lg">
@@ -1375,9 +1584,10 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {summaryCategoryData.map((row, idx) => {
+                {visibleSummaryCategoryData.map((row) => {
+                  const idx = categories.indexOf(row.category)
                   const isExpanded = expandedRows.has(row.category)
-                  const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length]
+                  const color = RICH_COLORS[idx % RICH_COLORS.length].solid
                   const hasSubCategories = row.subCategories.length > 0
                   const pct = row.totalReceipts > 0 ? Math.min((row.totalExpenditure / row.totalReceipts) * 100, 100) : 0
 
