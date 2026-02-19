@@ -667,7 +667,7 @@ export function Dashboard() {
       const balVal = Math.max(0, totalReceipts - expVal)
       return [
         { name: row.category, label: "Expenditure", value: expVal, fill: solid, category: row.category },
-        { name: row.category, label: "Balance", value: balVal, fill: opacity(solid, 0.64), category: row.category },
+        { name: row.category, label: "Balance", value: balVal, fill: opacity(solid, 0.84), category: row.category },
       ]
     }),
     [summaryCategoryData])
@@ -1531,7 +1531,7 @@ export function Dashboard() {
               <div className="mt-8 w-full space-y-1">
                 <div className="w-full flex flex-row justify-between text-xs text-muted-foreground border-b pb-2 px-2">
                   <span>Category</span>
-                  <span>Total Receipts</span>
+                  <span>Balance</span>
                 </div>
                 <div className="pt-1 space-y-1">
                   {categories.map((cat, i) => {
@@ -1554,7 +1554,7 @@ export function Dashboard() {
                           />
                           <span className="truncate text-left" style={{ maxWidth: 140 }}>{cat.slice(0, 5)}</span>
                         </div>
-                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">{formatINR(row.totalReceipts)}</span>
+                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">{formatINR(row.totalReceipts - row.totalExpenditure)}</span>
                       </button>
                     )
                   })}
