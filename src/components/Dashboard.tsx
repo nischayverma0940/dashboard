@@ -10,7 +10,8 @@ import { DataTable } from "./DataTable"
 import type { Column } from "./DataTable"
 import { EditDeleteDialog } from "./EditDeleteDialog"
 import { AddEntryDialog } from "./AddEntryDialog"
-import { Bar, BarChart, Cell } from "recharts"
+import type { LabelProps } from "recharts"
+import { Bar, BarChart, Cell, XAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { categories, subCategoriesMap, departments } from "@/models/data"
 
@@ -1036,7 +1037,7 @@ export function Dashboard() {
                     {([
                       { value: null, label: "All Time" },
                       { value: "dateRange", label: "Date Range" },
-                      { value: "financialYear", label: "Fin. Year" },
+                      { value: "financialYear", label: "Financial Year" },
                     ] as const).map(ft => (
                       <button
                         key={String(ft.value)}
@@ -1284,13 +1285,26 @@ export function Dashboard() {
         <div className="space-y-2">
           <div className="flex flex-col items-center px-8 py-4 rounded-lg border">
             <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
-            <ChartContainer config={chartConfig} className="h-80 w-full max-w-4xl">
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <ChartContainer
+              config={chartConfig}
+              style={{
+                height: 384,
+                width: Math.max(chartData.length * 60, 400),
+              }}
+            >
+              <BarChart
+                data={chartData}
+                margin={{ top: 90, right: 16, left: 16, bottom: 28 }}
+                barCategoryGap={12}
+                barSize={48}
+              >
                 <ChartTooltip
+                  cursor={{ fill: 'currentColor', opacity: 0.06, rx: 6 }}
                   content={
                     <ChartTooltipContent
+                      hideLabel={true}
                       formatter={(value, _, item) => (
-                        <div className="flex flex-col">
+                        <div className="flex flex-col gap-0.5">
                           <span className="text-xs font-bold">{item.payload.parentCategory}</span>
                           <span className="text-xs font-semibold">{item.payload.subCategory}</span>
                           <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
@@ -1299,11 +1313,52 @@ export function Dashboard() {
                     />
                   }
                 />
-                <Bar dataKey="totalExpenditure" radius={[8, 8, 0, 0]}>
+                <Bar
+                  dataKey="totalExpenditure"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={48}
+                  label={(props: LabelProps) => {
+                    const x = Number(props.x ?? 0)
+                    const y = Number(props.y ?? 0)
+                    const width = Number(props.width ?? 0)
+                    const value = Number(props.value ?? 0)
+                    if (!value) return <></>
+                    const cx = x + width / 2
+                    return (
+                      <text
+                        x={cx}
+                        y={y - 8}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90, ${cx}, ${y - 8})`}
+                        style={{
+                          fontSize: '10px',
+                          fill: '#6b7280',
+                          fontVariantNumeric: 'tabular-nums',
+                          letterSpacing: '0.01em',
+                        }}
+                      >
+                        {formatINR(value)}
+                      </text>
+                    )
+                  }}
+                >
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[categories.indexOf(entry.parentCategory) % CATEGORY_COLORS.length]} />
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={CATEGORY_COLORS[categories.indexOf(entry.parentCategory) % CATEGORY_COLORS.length]}
+                      fillOpacity={0.85}
+                    />
                   ))}
                 </Bar>
+                <XAxis
+                  dataKey="subCategory"
+                  tickFormatter={(v: string) => v.slice(0, 5)}
+                  tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                />
               </BarChart>
             </ChartContainer>
           </div>
