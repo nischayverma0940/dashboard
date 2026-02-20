@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx"
-import React, { useState, useMemo, useRef, useEffect } from "react"
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { ChevronDown, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import type { LabelProps } from "recharts"
 import { Bar, BarChart, Cell, XAxis, PieChart, Pie, Tooltip as RechartsTooltip } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { categories, subCategoriesMap, departments } from "@/models/data"
+import type { FieldValue } from "./EditDeleteDialog"
 
 type Scale = "absolute" | "thousands" | "lakhs" | "crores"
 type Tab = "summary" | "allocations" | "receipts" | "expenditures" | "reports"
@@ -83,6 +84,7 @@ const TABS: { value: Tab; label: string }[] = [
 
 const SCALES: Scale[] = ["absolute", "thousands", "lakhs", "crores"]
 const CATEGORY_COLORS = ["blue", "green", "orange"]
+const TANGENTIAL_GAP_PX = 5
 
 const RICH_COLORS = CATEGORY_COLORS.map(color => ({
   solid: color,
@@ -180,6 +182,17 @@ const flatToAllocation = (flat: AllocationFlat): Allocation => ({
   })),
 })
 
+const resolveColorToRgba = (color: string, alpha: number): string => {
+  const ctx = document.createElement("canvas").getContext("2d")
+  if (!ctx) return color
+  ctx.fillStyle = color
+  const hex = ctx.fillStyle.replace("#", "")
+  const r = parseInt(hex.substring(0, 2), 16)
+  const g = parseInt(hex.substring(2, 4), 16)
+  const b = parseInt(hex.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 function FilterCard({
   title,
   onClear,
@@ -229,7 +242,6 @@ export function Dashboard() {
   const [scale, setScale] = useState<Scale>("absolute")
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [summaryFilter, setSummaryFilter] = useState<string | null>(null)
 
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
   const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(21))
@@ -271,6 +283,9 @@ export function Dashboard() {
   const chartWrapperRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
 
+  const pieWrapperRef = useRef<HTMLDivElement>(null)
+  const [pieContainerWidth, setPieContainerWidth] = useState(0)
+
   useEffect(() => {
     const el = chartWrapperRef.current
     if (!el) return
@@ -284,9 +299,32 @@ export function Dashboard() {
     return () => observer.disconnect()
   }, [])
 
+  useEffect(() => {
+    if (activeTab !== "summary") return
+    const el = pieWrapperRef.current
+    if (!el) return
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) setPieContainerWidth(entry.contentRect.width)
+      }
+    })
+    observer.observe(el)
+    if (el.clientWidth > 0) setPieContainerWidth(el.clientWidth)
+    return () => observer.disconnect()
+  }, [activeTab])
+
+  const pieSize = Math.max(180, pieContainerWidth)
+  const pieR = pieSize / 2
+  const innerInnerR = Math.round(pieR * 0.338)
+  const innerOuterR = Math.round(pieR * 0.592)
+  const outerInnerR = Math.round(pieR * 0.620)
+  const outerOuterR = Math.round(pieR * 0.901)
+  const outerMidR = (outerInnerR + outerOuterR) / 2
+  const outerPaddingAngle = (TANGENTIAL_GAP_PX / outerMidR) * (180 / Math.PI)
+
   const canModify = true
 
-  const formatINR = (value: number): string => {
+  const formatINR = useCallback((value: number): string => {
     let displayValue = value
     let suffix = ""
     if (scale === "thousands") { displayValue = value / 1000; suffix = " K" }
@@ -297,7 +335,7 @@ export function Dashboard() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}${suffix}`
-  }
+  }, [scale])
 
   const toggleRow = (category: string) => {
     setExpandedRows(prev => {
@@ -373,7 +411,7 @@ export function Dashboard() {
     { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
   ]
 
-  const dateFormatDisplay = (key: string, value: string | number | Date | undefined): string => {
+  const dateFormatDisplay = (key: string, value: FieldValue): string => {
     if (key === "date" && value instanceof Date) return value.toISOString().split("T")[0]
     return String(value ?? "")
   }
@@ -509,11 +547,26 @@ export function Dashboard() {
     return summaryCategoryData.filter(c => expandedRows.has(c.category)).flatMap(c => c.subCategories)
   }, [summaryCategoryData, expandedRows])
 
+  const maxExpenditureValue = useMemo(() => {
+    return Math.max(...chartData.map(d => d.totalExpenditure), 0)
+  }, [chartData])
+  const dynamicChartHeight = useMemo(() => {
+    const labelText = formatINR(maxExpenditureValue)
+    const rotatedLabelHeight = labelText.length * 24 + 24
+    return rotatedLabelHeight + 120
+  }, [maxExpenditureValue, formatINR])
+
   const dynamicBarSize = useMemo(() => {
     if (!containerWidth || chartData.length === 0) return 48
+    const MIN_GAP = 0
+    const MAX_GAP = 16
+    const TARGET_BAR = 32
     const slotWidth = containerWidth / chartData.length
-    const barWidth = slotWidth * 0.75
-    return Math.max(8, Math.min(barWidth, 80))
+
+    const minBarWidth = Math.max(2, slotWidth - MAX_GAP)
+    const maxBarWidth = Math.max(2, slotWidth - MIN_GAP)
+    const barWidth = Math.max(minBarWidth, Math.min(maxBarWidth, TARGET_BAR))
+    return barWidth
   }, [containerWidth, chartData.length])
 
   const financialYears = useMemo(() => {
@@ -637,57 +690,66 @@ export function Dashboard() {
     }))
   }, [filteredReportData, reportType])
 
-  const innerPieData = useMemo(() =>
-    summaryCategoryData.map((row, i) => ({
-      name: row.category,
-      value: row.totalReceipts,
-      fill: RICH_COLORS[i % RICH_COLORS.length].solid,
-    })),
-    [summaryCategoryData])
+  const pieCategoryData = useMemo(() =>
+    expandedRows.size === 0
+      ? summaryCategoryData
+      : summaryCategoryData.filter(c => expandedRows.has(c.category)),
+    [summaryCategoryData, expandedRows])
 
+  const innerPieData = useMemo(() =>
+    pieCategoryData.map((row) => {
+      const idx = categories.indexOf(row.category)
+      return {
+        name: row.category,
+        value: row.totalReceipts,
+        fill: RICH_COLORS[idx % RICH_COLORS.length].solid,
+      }
+    }),
+    [pieCategoryData])
 
   const outerPieData = useMemo(() =>
-    summaryCategoryData.flatMap((row, i) => {
-      const opacity = (color: string, alpha: number) => {
-        const cvtStringToHex = (str: string) => {
-          const ctx = document.createElement("canvas").getContext("2d")
-          if (!ctx) return "000000"
-          ctx.fillStyle = str
-          return ctx.fillStyle.replace("#", "")
-        }
-        const hex = cvtStringToHex(color)
-        const r = parseInt(hex.substring(0, 2), 16)
-        const g = parseInt(hex.substring(2, 4), 16)
-        const b = parseInt(hex.substring(4, 6), 16)
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`
-      }
-      const { solid } = RICH_COLORS[i % RICH_COLORS.length]
+    pieCategoryData.flatMap((row) => {
+      const idx = categories.indexOf(row.category)
+      const { solid } = RICH_COLORS[idx % RICH_COLORS.length]
+      const balanceFill = resolveColorToRgba(solid, 0.28)
+
       const totalReceipts = Math.max(0, row.totalReceipts)
-      const expVal = Math.min(Math.max(0, row.totalExpenditure), totalReceipts || row.totalExpenditure)
-      const balVal = Math.max(0, totalReceipts - expVal)
-      return [
-        { name: row.category, label: "Expenditure", value: expVal, fill: solid, category: row.category },
-        { name: row.category, label: "Balance", value: balVal, fill: opacity(solid, 0.84), category: row.category },
-      ]
-    }),
-    [summaryCategoryData])
 
-  const handlePieClick = (category: string) => {
-    setSummaryFilter(prev => prev === category ? null : category)
-    setExpandedRows(prev => {
-      const next = new Set(prev)
-      for (const cat of next) {
-        if (cat !== category) next.delete(cat)
+      if (expandedRows.size === 0) {
+        const expVal = Math.min(Math.max(0, row.totalExpenditure), totalReceipts || row.totalExpenditure)
+        const balVal = Math.max(0, totalReceipts - expVal)
+        return [
+          { name: row.category, label: "Expenditure", value: expVal, fill: solid, category: row.category },
+          { name: row.category, label: "Balance", value: balVal, fill: balanceFill, category: row.category },
+        ]
       }
-      return next
-    })
-  }
 
-  const visibleSummaryCategoryData = useMemo(() =>
-    summaryFilter
-      ? summaryCategoryData.filter(r => r.category === summaryFilter)
-      : summaryCategoryData,
-    [summaryCategoryData, summaryFilter])
+      const subSegments = row.subCategories
+        .filter(sub => sub.totalExpenditure > 0)
+        .map(sub => ({
+          name: sub.subCategory,
+          label: "Expenditure",
+          value: sub.totalExpenditure,
+          fill: solid,
+          category: row.category,
+        }))
+
+      const totalExpenditure = Math.min(Math.max(0, row.totalExpenditure), totalReceipts || row.totalExpenditure)
+      const balance = Math.max(0, totalReceipts - totalExpenditure)
+
+      if (balance > 0) {
+        subSegments.push({
+          name: `${row.category} (Balance)`,
+          label: "Balance",
+          value: balance,
+          fill: balanceFill,
+          category: row.category,
+        })
+      }
+
+      return subSegments
+    }),
+    [pieCategoryData, expandedRows])
 
   const renderAllocationCard = (
     table: typeof allocationTables[number],
@@ -1368,142 +1430,151 @@ export function Dashboard() {
 
       {activeTab === "summary" && (
         <div className="space-y-2">
-          <div className="flex flex-col xl:flex-row gap-2 items-stretch">
-            <div className="flex-1 flex flex-col items-center px-8 py-4 rounded-lg border" ref={chartWrapperRef}>
+          <div className="flex flex-col md:flex-row gap-2 items-stretch">
+
+            <div className="flex-2 flex flex-col justify-between items-center px-4 py-4 rounded-lg border" ref={chartWrapperRef}>
               <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
-              <ChartContainer
-                config={chartConfig}
-                style={{ height: 384, width: "100%" }}
-              >
-                <BarChart
-                  data={chartData}
-                  margin={{ top: 96, right: 16, left: 16, bottom: 0 }}
-                  barCategoryGap="20%"
-                  barSize={dynamicBarSize}
+              <div className="mb-12">
+                <ChartContainer
+                  config={chartConfig}
+                  style={{ height: dynamicChartHeight, width: "100%" }}
                 >
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        hideLabel={true}
-                        formatter={(value, _, item) => (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-xs font-bold">{item.payload.parentCategory}</span>
-                            <span className="text-xs font-semibold">{item.payload.subCategory}</span>
-                            <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
-                          </div>
-                        )}
-                      />
-                    }
-                  />
-                  <Bar
-                    dataKey="totalExpenditure"
-                    radius={[6, 6, 0, 0]}
-                    label={(props: LabelProps) => {
-                      const x = Number(props.x ?? 0)
-                      const y = Number(props.y ?? 0)
-                      const width = Number(props.width ?? 0)
-                      const value = Number(props.value ?? 0)
-                      if (!value) return <></>
-                      const cx = x + width / 2
-                      return (
-                        <text
-                          x={cx}
-                          y={y - 8}
-                          textAnchor="start"
-                          dominantBaseline="middle"
-                          transform={`rotate(-90, ${cx}, ${y - 8})`}
-                          style={{
-                            fontSize: '11px',
-                            fontVariantNumeric: 'tabular-nums',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          {formatINR(value)}
-                        </text>
-                      )
-                    }}
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 96, right: 0, left: 0, bottom: 16 }}
+                    barCategoryGap="20%"
+                    barSize={dynamicBarSize}
                   >
-                    {chartData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid}
-                        opacity={summaryFilter && summaryFilter !== entry.parentCategory ? 0.50 : 1}
-                        style={{ cursor: "pointer" }}
-                        onClick={() => handlePieClick(entry.parentCategory)}
-                      />
-                    ))}
-                  </Bar>
-                  <XAxis
-                    dataKey="subCategory"
-                    tickFormatter={(v: string) => v.slice(0, 5)}
-                    tick={{ fontSize: 11, fontWeight: 700 }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                  />
-                </BarChart>
-              </ChartContainer>
-              <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
-                {categoryLegend.map((item, i) => (
-                  <button
-                    key={item.name}
-                    onClick={() => handlePieClick(item.name)}
-                    className={cn(
-                      "flex items-center gap-2 text-xs font-medium rounded px-2 py-1 transition-all",
-                      summaryFilter && summaryFilter !== item.name ? "opacity-40" : "opacity-100",
-                      summaryFilter === item.name ? "bg-muted" : "hover:bg-muted/80"
-                    )}
-                  >
-                    <span
-                      className="w-4 h-4 rounded-lg"
-                      style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          hideLabel={true}
+                          formatter={(value, _, item) => (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-xs font-bold">{item.payload.parentCategory}</span>
+                              <span className="text-xs font-semibold">{item.payload.subCategory}</span>
+                              <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
+                            </div>
+                          )}
+                        />
+                      }
                     />
-                    <span>{item.name}</span>
-                  </button>
-                ))}
+                    <Bar
+                      dataKey="totalExpenditure"
+                      radius={[6, 6, 0, 0]}
+                      label={(props: LabelProps) => {
+                        const x = Number(props.x ?? 0)
+                        const y = Number(props.y ?? 0)
+                        const width = Number(props.width ?? 0)
+                        const value = Number(props.value ?? 0)
+                        if (!value) return <></>
+                        const cx = x + width / 2
+                        return (
+                          <text
+                            x={cx}
+                            y={y - 6}
+                            textAnchor="start"
+                            dominantBaseline="middle"
+                            transform={`rotate(-90, ${cx}, ${y - 6})`}
+                            style={{
+                              fontSize: '11px',
+                              fontVariantNumeric: 'tabular-nums',
+                              letterSpacing: '0.01em',
+                            }}
+                          >
+                            {formatINR(value)}
+                          </text>
+                        )
+                      }}
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid}
+                        />
+                      ))}
+                    </Bar>
+                    <XAxis
+                      dataKey="subCategory"
+                      tick={(props: { x: string | number; y: string | number; payload?: { value: string } }) => {
+                        const x = Number(props.x ?? 0)
+                        const y = Number(props.y ?? 0)
+                        const payload = props.payload
+                        return (
+                          <text
+                            x={x}
+                            y={y + 4}
+                            textAnchor="end"
+                            transform={`rotate(-90, ${x}, ${y + 4})`}
+                            style={{ fontSize: 11, fontWeight: 700 }}
+                          >
+                            {(payload?.value ?? "").slice(0, 5)}
+                          </text>
+                        )
+                      }}
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                    />
+                  </BarChart>
+                </ChartContainer>
+
+                <div className="flex flex-wrap justify-center gap-x-2 gap-y-2 mt-8 border-t pt-2">
+                  {categoryLegend.map((item, i) => (
+                    <div
+                      key={item.name}
+                      className="flex items-center gap-2 text-xs font-medium px-2 py-1"
+                    >
+                      <span
+                        className="w-4 h-4 rounded-lg shrink-0"
+                        style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
+                      />
+                      <span>{item.name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="xl:w-80 hidden xl:flex xl:flex-col items-center px-6 py-4 rounded-lg border shrink-0">
-              <h3 className="text-md font-semibold mb-8 text-muted-foreground self-start">Receipts vs Expenditure</h3>
+            <div className="flex-1 flex flex-col items-center px-4 py-4 rounded-lg border shrink-0">
+              <h3 className="text-md font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
 
-              <div className="relative flex flex-col h-full items-center justify-center" style={{ height: 260, width: 260 }}>
-                <PieChart width={284} height={284}>
+              <div className="relative flex flex-col items-center justify-center w-full" ref={pieWrapperRef}>
+                <PieChart width={pieSize} height={pieSize}>
                   <Pie
                     data={innerPieData}
-                    cx={125}
-                    cy={125}
-                    innerRadius={48}
-                    outerRadius={84}
+                    cx={pieR - 1}
+                    cy={pieR - 1}
+                    innerRadius={innerInnerR}
+                    outerRadius={innerOuterR}
                     dataKey="value"
                     stroke="none"
-                    activeShape={false}
+                    isAnimationActive={true}
                   >
                     {innerPieData.map((entry, index) => (
                       <Cell
                         key={`inner-${index}`}
                         fill={entry.fill}
-                        opacity={summaryFilter && summaryFilter !== entry.name ? 0.50 : 1}
                       />
                     ))}
                   </Pie>
 
                   <Pie
                     data={outerPieData}
-                    cx={125}
-                    cy={125}
-                    innerRadius={88}
-                    outerRadius={128}
+                    cx={pieR - 1}
+                    cy={pieR - 1}
+                    innerRadius={outerInnerR}
+                    outerRadius={outerOuterR}
                     dataKey="value"
                     stroke="none"
-                    activeShape={false}
+                    paddingAngle={outerPaddingAngle}
+                    isAnimationActive={true}
                   >
                     {outerPieData.map((entry, index) => (
                       <Cell
                         key={`outer-${index}`}
                         fill={entry.fill}
-                        opacity={summaryFilter && summaryFilter !== entry.category ? 0.50 : 1}
                       />
                     ))}
                   </Pie>
@@ -1513,13 +1584,12 @@ export function Dashboard() {
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null
                       const d = payload[0].payload as typeof outerPieData[number] & typeof innerPieData[number]
-                      if (d.label === "Balance") return null
                       return (
-                        <div className="rounded-lg bg-background px-3 py-2 text-xs space-y-1">
+                        <div className="rounded-lg bg-background border shadow-sm px-3 py-2 text-xs space-y-1">
                           <p className="font-semibold text-foreground leading-tight" style={{ maxWidth: 180 }}>{d.name}</p>
-                          {d.label && (
+                          {d.label ? (
                             <p className="text-muted-foreground">{d.label}</p>
-                          )}
+                          ) : <p className="text-muted-foreground">Receipts</p>}
                           <p className="font-bold text-primary text-sm">{formatINR(d.value)}</p>
                         </div>
                       )
@@ -1528,46 +1598,36 @@ export function Dashboard() {
                 </PieChart>
               </div>
 
-              <div className="mt-8 w-full space-y-1">
+              <div className="mt-4 w-full space-y-1">
                 <div className="w-full flex flex-row justify-between text-xs text-muted-foreground border-b pb-2 px-2">
                   <span>Category</span>
                   <span>Balance</span>
                 </div>
                 <div className="pt-1 space-y-1">
-                  {categories.map((cat, i) => {
-                    const row = summaryCategoryData[i]
-                    const isActive = !summaryFilter || summaryFilter === cat
+                  {pieCategoryData.map((row) => {
+                    const idx = categories.indexOf(row.category)
+                    const color = RICH_COLORS[idx % RICH_COLORS.length].solid
                     return (
-                      <button
-                        key={cat}
-                        onClick={() => handlePieClick(cat)}
-                        className={cn(
-                          "w-full flex items-center justify-between px-2 py-1 rounded-md text-xs transition-all",
-                          isActive ? "opacity-100" : "opacity-64",
-                          summaryFilter === cat ? "bg-muted font-semibold" : "hover:bg-muted/80"
-                        )}
+                      <div
+                        key={row.category}
+                        className="w-full flex items-center justify-between px-2 py-1 rounded-md text-xs"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
+                            style={{ backgroundColor: color }}
                           />
-                          <span className="truncate text-left" style={{ maxWidth: 140 }}>{cat.slice(0, 5)}</span>
+                          <span className="truncate text-left" style={{ maxWidth: 140 }}>
+                            {row.category.slice(0, 5)}
+                          </span>
                         </div>
-                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">{formatINR(row.totalReceipts - row.totalExpenditure)}</span>
-                      </button>
+                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">
+                          {formatINR(row.totalReceipts - row.totalExpenditure)}
+                        </span>
+                      </div>
                     )
                   })}
                 </div>
-
-                {summaryFilter && (
-                  <button
-                    onClick={() => setSummaryFilter(null)}
-                    className="w-full text-xs text-center text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 pt-1"
-                  >
-                    <X className="h-3 w-3" /> Clear filter
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -1584,7 +1644,7 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {visibleSummaryCategoryData.map((row) => {
+                {summaryCategoryData.map((row) => {
                   const idx = categories.indexOf(row.category)
                   const isExpanded = expandedRows.has(row.category)
                   const color = RICH_COLORS[idx % RICH_COLORS.length].solid

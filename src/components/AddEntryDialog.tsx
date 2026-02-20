@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+type FieldValue = string | number | Date
+
 type FieldConfig = {
   key: string
   label: string
@@ -13,7 +15,7 @@ type FieldConfig = {
   options?: string[]
   required?: boolean
   dependsOn?: string
-  getDynamicOptions?: (formData: any) => string[]
+  getDynamicOptions?: (formData: Record<string, FieldValue>) => string[]
 }
 
 type AddEntryDialogProps<T> = {
@@ -23,17 +25,17 @@ type AddEntryDialogProps<T> = {
   buttonLabel?: string
 }
 
-export function AddEntryDialog<T extends Record<string, any>>({
+export function AddEntryDialog<T extends Record<string, FieldValue>>({
   fields,
   onAdd,
   title,
   buttonLabel = "Add Entry",
 }: AddEntryDialogProps<T>) {
   const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState<Partial<T>>({})
+  const [formData, setFormData] = useState<Record<string, FieldValue>>({})
 
   const initializeForm = () => {
-    const initialData: any = {}
+    const initialData: Record<string, FieldValue> = {}
     fields.forEach(field => {
       if (field.type === "date") {
         initialData[field.key] = new Date().toISOString().split('T')[0]
@@ -54,7 +56,7 @@ export function AddEntryDialog<T extends Record<string, any>>({
   }
 
   const handleAdd = () => {
-    const processedData: any = {}
+    const processedData: Record<string, FieldValue> = {}
     fields.forEach(field => {
       const value = formData[field.key]
       if (field.type === "date" && value) {
@@ -65,22 +67,22 @@ export function AddEntryDialog<T extends Record<string, any>>({
         processedData[field.key] = value
       }
     })
-    
+
     onAdd(processedData as T)
     setOpen(false)
     setFormData({})
   }
 
-  const updateField = (key: string, value: any) => {
+  const updateField = (key: string, value: FieldValue) => {
     setFormData(prev => {
-      const updated = { ...prev, [key]: value }
-      
+      const updated: Record<string, FieldValue> = { ...prev, [key]: value }
+
       fields.forEach(field => {
         if (field.dependsOn === key) {
           updated[field.key] = ""
         }
       })
-      
+
       return updated
     })
   }
