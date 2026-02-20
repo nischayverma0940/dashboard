@@ -78,12 +78,12 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "summary", label: "Summary" },
   { value: "allocations", label: "Allocations" },
   { value: "receipts", label: "Receipts" },
-  { value: "expenditures", label: "Expenditures" },
+  { value: "expenditures", label: "Expenditure" },
   { value: "reports", label: "Reports" },
 ]
 
 const SCALES: Scale[] = ["absolute", "thousands", "lakhs", "crores"]
-const CATEGORY_COLORS = ["blue", "green", "orange"]
+const CATEGORY_COLORS = ["#337AB7", "#5CB85C", "#F0AD4E"]
 const TANGENTIAL_GAP_PX = 5
 
 const RICH_COLORS = CATEGORY_COLORS.map(color => ({
@@ -558,8 +558,8 @@ export function Dashboard() {
 
   const dynamicBarSize = useMemo(() => {
     if (!containerWidth || chartData.length === 0) return 48
-    const MIN_GAP = 0
-    const MAX_GAP = 16
+    const MIN_GAP = 2
+    const MAX_GAP = 8
     const TARGET_BAR = 32
     const slotWidth = containerWidth / chartData.length
 
@@ -794,7 +794,7 @@ export function Dashboard() {
         <div className="text-4xl font-extrabold text-center mb-2">
           Dr B R Ambedkar National Institute of Technology Jalandhar
         </div>
-        <h1 className="text-2xl font-bold text-center">Ministry Grants Receipts & Expenditures</h1>
+        <h1 className="text-2xl font-bold text-center">Ministry Grants Receipts & Expenditure</h1>
       </div>
 
       <div className="flex flex-col lg:flex-row items-center lg:justify-between lg:items-end gap-2 mb-6">
@@ -1462,7 +1462,7 @@ export function Dashboard() {
                     />
                     <Bar
                       dataKey="totalExpenditure"
-                      radius={[6, 6, 0, 0]}
+                      radius={[0, 0, 0, 0]}
                       label={(props: LabelProps) => {
                         const x = Number(props.x ?? 0)
                         const y = Number(props.y ?? 0)

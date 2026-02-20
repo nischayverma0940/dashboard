@@ -125,7 +125,7 @@ export function DataTable<T extends Record<string, unknown>>({
   const isRangeFilter = (key: string) => key.endsWith("Min") || key.endsWith("Max") || key === "dateFrom" || key === "dateTo"
 
   return (
-    <div className="w-full px-2 py-4">
+    <div className="w-full py-2">
       {title && <h2 className="text-2xl font-semibold mb-4">{title}</h2>}
 
       {filters.length > 0 && (
@@ -197,14 +197,14 @@ export function DataTable<T extends Record<string, unknown>>({
       )}
 
       <Table>
-        <TableHeader>
+        <TableHeader className="bg-primary">
           <TableRow>
-            <TableHead>S.No</TableHead>
+            <TableHead className="text-background">S.No</TableHead>
             {columns.map(col => (
               <TableHead
                 key={col.key as string}
                 onClick={col.sortable ? () => requestSort(col.key) : undefined}
-                className={`${col.sortable ? "cursor-pointer" : ""} ${col.className || ""}`}
+                className={`${col.sortable ? "cursor-pointer" : ""} ${col.className || ""} text-background`}
               >
                 {col.label}{col.sortable && arrow(col.key)}
               </TableHead>
