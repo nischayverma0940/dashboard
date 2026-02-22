@@ -1,11 +1,12 @@
 import * as XLSX from "xlsx"
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
-import { ChevronDown, ChevronRight, X } from "lucide-react"
+import { ChevronDown, ChevronRight, ChevronLeft, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DataTable } from "./DataTable"
 import type { Column } from "./DataTable"
 import { EditDeleteDialog } from "./EditDeleteDialog"
@@ -15,11 +16,15 @@ import { Bar, BarChart, Cell, XAxis, PieChart, Pie, Tooltip as RechartsTooltip }
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { categories, subCategoriesMap, departments } from "@/models/data"
 import type { FieldValue } from "./EditDeleteDialog"
+import "@/lib/mock";
 
 type Scale = "absolute" | "thousands" | "lakhs" | "crores"
 type Tab = "summary" | "allocations" | "receipts" | "expenditures" | "reports"
 
+const BASE_URL = (import.meta.env?.VITE_BASE_URL as string | undefined) ?? "http://localhost:3000/"
+
 type Receipt = {
+  id: number
   date: Date
   sanctionOrder: string
   category: string
@@ -33,6 +38,7 @@ type AllocationCategoryAmount = {
 }
 
 type Allocation = {
+  id: number
   date: Date
   allocationNumber: string
   categoryAmounts: AllocationCategoryAmount[]
@@ -46,6 +52,7 @@ type AllocationFlat = {
 }
 
 type Expenditure = {
+  id: number
   date: Date
   billNo: string
   voucherNo: string
@@ -71,7 +78,7 @@ type AllocationFilters = {
 
 type FieldFormData = {
   category?: string
-  [key: string]: string | number | Date | undefined
+  [key: string]: string | number | Date | File | undefined
 }
 
 const TABS: { value: Tab; label: string }[] = [
@@ -97,56 +104,7 @@ const categoryLegend = categories.map((cat, i) => ({
 
 const chartConfig = { amount: { label: "Expenditure" } } satisfies ChartConfig
 
-const randomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
-const randomDate = (year = 2024) =>
-  new Date(year, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1)
-const randomAmount = (max: number) => parseFloat((Math.random() * max).toFixed(2))
-
-const generateReceipts = (count: number): Receipt[] =>
-  Array.from({ length: count }, () => ({
-    date: randomDate(),
-    sanctionOrder:
-      Math.random() > 0.5
-        ? `${1000 + Math.floor(Math.random() * 9000)}`
-        : `SO-${1000 + Math.floor(Math.random() * 9000)}`,
-    category: randomItem(categories),
-    amount: randomAmount(100000),
-    attachment: Math.random() > 0.5 ? "https://example.com/file.pdf" : undefined,
-  }))
-
-const generateAllocations = (count: number): Allocation[] =>
-  Array.from({ length: count }, () => ({
-    date: randomDate(),
-    allocationNumber: `AL-${1000 + Math.floor(Math.random() * 900)}`,
-    categoryAmounts: categories.map(category => ({
-      category,
-      allocatedAmount: randomAmount(100000),
-    })),
-  }))
-
-const generateExpenditures = (count: number): Expenditure[] =>
-  Array.from({ length: count }, () => {
-    const category = randomItem(categories)
-    return {
-      date: randomDate(),
-      billNo:
-        Math.random() > 0.5
-          ? `${1000 + Math.floor(Math.random() * 9000)}`
-          : `BN-${1000 + Math.floor(Math.random() * 9000)}`,
-      voucherNo:
-        Math.random() > 0.5
-          ? `${1000 + Math.floor(Math.random() * 9000)}`
-          : `VN-${1000 + Math.floor(Math.random() * 9000)}`,
-      category,
-      subCategory: randomItem(subCategoriesMap[category]),
-      department:
-        category === "OH-35 Grants for Creation of Capital Assets"
-          ? randomItem(departments.slice(1))
-          : "-",
-      amount: randomAmount(50000),
-      attachment: Math.random() > 0.5 ? "https://example.com/file.pdf" : undefined,
-    }
-  })
+const parseDate = (v: string | Date): Date => (v instanceof Date ? v : new Date(v))
 
 const exportToExcel = (data: Record<string, string | number>[], fileName: string) => {
   const worksheet = XLSX.utils.json_to_sheet(data)
@@ -173,7 +131,7 @@ const allocationToFlat = (a: Allocation & { _index: number }): AllocationFlat =>
   ...Object.fromEntries(a.categoryAmounts.map(ca => [`amount_${ca.category}`, ca.allocatedAmount])),
 })
 
-const flatToAllocation = (flat: AllocationFlat): Allocation => ({
+const flatToAllocation = (flat: AllocationFlat): Omit<Allocation, "id"> => ({
   date: flat.date as Date,
   allocationNumber: flat.allocationNumber as string,
   categoryAmounts: categories.map(c => ({
@@ -191,6 +149,106 @@ const resolveColorToRgba = (color: string, alpha: number): string => {
   const g = parseInt(hex.substring(2, 4), 16)
   const b = parseInt(hex.substring(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+  itemsPerPage,
+  totalItems,
+  onItemsPerPageChange,
+  itemLabel = "items",
+}: {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  itemsPerPage: number
+  totalItems: number
+  onItemsPerPageChange: (n: number) => void
+  itemLabel?: string
+}) {
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems)
+
+  const getPageNumbers = () => {
+    const pages: (number | "...")[] = []
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (currentPage > 3) pages.push("...")
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i)
+      }
+      if (currentPage < totalPages - 2) pages.push("...")
+      pages.push(totalPages)
+    }
+    return pages
+  }
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t mt-3">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Show</span>
+        <Select
+          value={String(itemsPerPage)}
+          onValueChange={v => { onItemsPerPageChange(Number(v)); onPageChange(1) }}
+        >
+          <SelectTrigger className="h-8 w-16 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[5, 10, 20, 50].map(n => (
+              <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span>{itemLabel} per page</span>
+        {totalItems > 0 && (
+          <span className="hidden sm:inline text-xs">
+            — {startItem}–{endItem} of {totalItems}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        {getPageNumbers().map((page, i) =>
+          page === "..." ? (
+            <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-sm select-none">…</span>
+          ) : (
+            <Button
+              key={page}
+              variant={currentPage === page ? "default" : "outline"}
+              size="icon"
+              className="h-8 w-8 text-xs"
+              onClick={() => onPageChange(page as number)}
+            >
+              {page}
+            </Button>
+          )
+        )}
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages || totalPages === 0}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function FilterCard({
@@ -243,12 +301,17 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
-  const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
-  const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(21))
-  const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [allocations, setAllocations] = useState<Allocation[]>([])
+  const [expenditures, setExpenditures] = useState<Expenditure[]>([])
 
   const [allocationFilters, setAllocationFilters] = useState<AllocationFilters>({})
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set())
+
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyPerPage, setHistoryPerPage] = useState(5)
+  const [reportPage, setReportFyPage] = useState(1)
+  const [reportPerPage, setReportFyPerPage] = useState(10)
 
   const [receiptTabFilters, setReceiptTabFilters] = useState({
     sanctionOrder: "",
@@ -313,6 +376,40 @@ export function Dashboard() {
     return () => observer.disconnect()
   }, [activeTab])
 
+  const parseList = <T,>(data: unknown): T[] =>
+    Array.isArray(data) ? data : (data as { data?: T[] } | null)?.data ?? []
+
+  const fetchReceipts = useCallback(async () => {
+    const res = await fetch(`${BASE_URL}/receipts/read.php`)
+    if (!res.ok) return
+    const data = await res.json()
+    const list = parseList<Receipt & { date: string }>(data)
+    setReceipts(list.map(r => ({ ...r, date: parseDate(r.date), amount: Number(r.amount) || 0 })))
+  }, [])
+  const fetchExpenditures = useCallback(async () => {
+    const res = await fetch(`${BASE_URL}/expenditures/read.php`)
+    if (!res.ok) return
+    const data = await res.json()
+    const list = parseList<Expenditure & { date: string }>(data)
+    setExpenditures(list.map(e => ({ ...e, date: parseDate(e.date), amount: Number(e.amount) || 0 })))
+  }, [])
+  const fetchAllocations = useCallback(async () => {
+    const res = await fetch(`${BASE_URL}/allocations/read.php`)
+    if (!res.ok) return
+    const data = await res.json()
+    const list = parseList<Allocation & { date: string }>(data)
+    setAllocations(list.map(a => ({ ...a, date: parseDate(a.date) })))
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchReceipts()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchExpenditures()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchAllocations()
+  }, [fetchReceipts, fetchExpenditures, fetchAllocations])
+
   const pieSize = Math.max(180, pieContainerWidth)
   const pieR = pieSize / 2
   const innerInnerR = Math.round(pieR * 0.338)
@@ -353,33 +450,174 @@ export function Dashboard() {
     })
   }
 
-  const handleAllocationAdd = (formData: AllocationFlat) =>
-    setAllocations(prev => [flatToAllocation(formData), ...prev])
+  const receiptToBody = (r: Receipt) => ({
+    id: r.id,
+    date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : r.date,
+    sanctionOrder: r.sanctionOrder,
+    category: r.category,
+    amount: r.amount,
+    attachment: r.attachment ?? "",
+  })
+  const expenditureToBody = (e: Expenditure) => ({
+    id: e.id,
+    date: e.date instanceof Date ? e.date.toISOString().split("T")[0] : e.date,
+    billNo: e.billNo,
+    voucherNo: e.voucherNo,
+    category: e.category,
+    subCategory: e.subCategory,
+    department: e.department,
+    amount: e.amount,
+    attachment: e.attachment ?? "",
+  })
+  const allocationToBody = (a: Allocation) => ({
+    id: a.id,
+    date: a.date instanceof Date ? a.date.toISOString().split("T")[0] : a.date,
+    allocationNumber: a.allocationNumber,
+    categoryAmounts: a.categoryAmounts,
+  })
 
-  const handleAllocationSave = (i: number) => (formData: AllocationFlat) =>
-    setAllocations(prev => { const n = [...prev]; n[i] = flatToAllocation(formData); return n })
+  const handleAllocationAdd = async (formData: AllocationFlat) => {
+    const body = flatToAllocation(formData)
+    const payload = {
+      date: body.date instanceof Date ? body.date.toISOString().split("T")[0] : body.date,
+      allocationNumber: body.allocationNumber,
+      categoryAmounts: body.categoryAmounts,
+    }
+    const res = await fetch(`${BASE_URL}/allocations/create.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) await fetchAllocations()
+  }
 
-  const handleAllocationDelete = (i: number) => () =>
-    setAllocations(prev => prev.filter((_, idx) => idx !== i))
+  const handleAllocationSave = (id: number) => async (formData: AllocationFlat) => {
+    const body = flatToAllocation(formData)
+    const payload = allocationToBody({ ...body, id })
+    const res = await fetch(`${BASE_URL}/allocations/update.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) await fetchAllocations()
+  }
 
-  const handleReceiptAdd = (r: Receipt) => setReceipts(prev => [r, ...prev])
-  const handleReceiptSave = (i: number) => (r: Receipt) =>
-    setReceipts(prev => { const n = [...prev]; n[i] = r; return n })
-  const handleReceiptDelete = (i: number) => () =>
-    setReceipts(prev => prev.filter((_, idx) => idx !== i))
+  const handleAllocationDelete = (id: number) => async () => {
+    const res = await fetch(`${BASE_URL}/allocations/delete.php?id=${id}`, { method: "DELETE" })
+    if (res.ok) await fetchAllocations()
+  }
 
-  const handleExpenditureAdd = (e: Expenditure) => setExpenditures(prev => [e, ...prev])
-  const handleExpenditureSave = (i: number) => (e: Expenditure) =>
-    setExpenditures(prev => { const n = [...prev]; n[i] = e; return n })
-  const handleExpenditureDelete = (i: number) => () =>
-    setExpenditures(prev => prev.filter((_, idx) => idx !== i))
+  const uploadAttachment = useCallback(async (file: File, type: "receipt" | "expenditure"): Promise<string> => {
+    const form = new FormData()
+    form.append("type", type)
+    form.append("file", file)
+    const res = await fetch(`${BASE_URL}/upload.php`, { method: "POST", body: form })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error((err as { error?: string }).error ?? "Upload failed")
+    }
+    const data = (await res.json()) as { url: string }
+    return data.url
+  }, [])
+
+  const isFileAttachment = (v: unknown): v is File =>
+    typeof File !== "undefined" && v instanceof File
+
+  const handleReceiptAdd = async (r: Omit<Receipt, "id"> & { attachment?: string | File }) => {
+    let attachmentUrl = ""
+    if (isFileAttachment(r.attachment)) {
+      attachmentUrl = await uploadAttachment(r.attachment, "receipt")
+    } else {
+      attachmentUrl = r.attachment ?? ""
+    }
+    const payload = {
+      date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : r.date,
+      sanctionOrder: r.sanctionOrder,
+      category: r.category,
+      amount: r.amount,
+      attachment: attachmentUrl,
+    }
+    const res = await fetch(`${BASE_URL}/receipts/create.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) await fetchReceipts()
+  }
+
+  const handleReceiptSave = (id: number) => async (r: Receipt & { attachment?: string | File }) => {
+    let attachmentUrl = ""
+    if (isFileAttachment(r.attachment)) {
+      attachmentUrl = await uploadAttachment(r.attachment, "receipt")
+    } else {
+      attachmentUrl = r.attachment ?? ""
+    }
+    const body = receiptToBody({ ...r, id, attachment: attachmentUrl })
+    const res = await fetch(`${BASE_URL}/receipts/update.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) await fetchReceipts()
+  }
+
+  const handleReceiptDelete = (id: number) => async () => {
+    const res = await fetch(`${BASE_URL}/receipts/delete.php?id=${id}`, { method: "DELETE" })
+    if (res.ok) await fetchReceipts()
+  }
+
+  const handleExpenditureAdd = async (e: Omit<Expenditure, "id"> & { attachment?: string | File }) => {
+    let attachmentUrl = ""
+    if (isFileAttachment(e.attachment)) {
+      attachmentUrl = await uploadAttachment(e.attachment, "expenditure")
+    } else {
+      attachmentUrl = e.attachment ?? ""
+    }
+    const payload = {
+      date: e.date instanceof Date ? e.date.toISOString().split("T")[0] : e.date,
+      billNo: e.billNo,
+      voucherNo: e.voucherNo,
+      category: e.category,
+      subCategory: e.subCategory,
+      department: e.department,
+      amount: e.amount,
+      attachment: attachmentUrl,
+    }
+    const res = await fetch(`${BASE_URL}/expenditures/create.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) await fetchExpenditures()
+  }
+
+  const handleExpenditureSave = (id: number) => async (e: Expenditure & { attachment?: string | File }) => {
+    let attachmentUrl = ""
+    if (isFileAttachment(e.attachment)) {
+      attachmentUrl = await uploadAttachment(e.attachment, "expenditure")
+    } else {
+      attachmentUrl = e.attachment ?? ""
+    }
+    const body = expenditureToBody({ ...e, id, attachment: attachmentUrl })
+    const res = await fetch(`${BASE_URL}/expenditures/update.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) await fetchExpenditures()
+  }
+
+  const handleExpenditureDelete = (id: number) => async () => {
+    const res = await fetch(`${BASE_URL}/expenditures/delete.php?id=${id}`, { method: "DELETE" })
+    if (res.ok) await fetchExpenditures()
+  }
 
   const receiptFields = [
     { key: "date", label: "Date", type: "date" as const, required: true },
     { key: "sanctionOrder", label: "Sanction Order", type: "text" as const, required: true },
     { key: "category", label: "OH Category", type: "select" as const, options: categories, required: true },
     { key: "amount", label: "Amount", type: "number" as const, required: true },
-    { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
+    { key: "attachment", label: "Attachment", type: "file" as const, required: false },
   ]
 
   const allocationFields = useMemo(() => [
@@ -404,11 +642,11 @@ export function Dashboard() {
       type: "select" as const,
       required: true,
       dependsOn: "category",
-      getDynamicOptions: (formData: FieldFormData) => formData.category ? subCategoriesMap[formData.category] : [],
+      getDynamicOptions: (formData: FieldFormData) => formData.category ? subCategoriesMap[formData.category as string] ?? [] : [],
     },
     { key: "department", label: "Department", type: "select" as const, options: ["-", ...departments.slice(1)], required: true },
     { key: "amount", label: "Amount", type: "number" as const, required: true },
-    { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
+    { key: "attachment", label: "Attachment", type: "file" as const, required: false },
   ]
 
   const dateFormatDisplay = (key: string, value: FieldValue): string => {
@@ -416,18 +654,21 @@ export function Dashboard() {
     return String(value ?? "")
   }
 
-  const attachmentCell = (url: string | number | Date | undefined) =>
-    url ? (
-      <a href={String(url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+  const attachmentCell = (url: string | number | Date | undefined) => {
+    if (!url) return <>-</>
+    const href = typeof url === "string" && !url.startsWith("http") ? `${BASE_URL}/${url}` : String(url)
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
         View
       </a>
-    ) : <>-</>
+    )
+  }
 
   const receiptColumns: Column<Receipt & { _index: number }>[] = [
     { key: "date", label: "Date", sortable: true, format: d => d instanceof Date ? formatDateDisplay(d) : String(d) },
     { key: "sanctionOrder", label: "Sanction Order", sortable: true },
     { key: "category", label: "OH Category", sortable: true },
-    { key: "amount", label: "Amount", sortable: true, className: "text-right", format: a => typeof a === "number" ? formatINR(a) : "-" },
+    { key: "amount", label: "Amount", sortable: true, className: "text-right", format: a => (typeof a === "number" && !Number.isNaN(a)) || (typeof a === "string" && a !== "" && !Number.isNaN(Number(a))) ? formatINR(Number(a)) : "-" },
     { key: "attachment", label: "Attachment", format: attachmentCell },
     {
       key: "_index",
@@ -437,9 +678,10 @@ export function Dashboard() {
           <EditDeleteDialog
             row={row}
             fields={receiptFields}
-            onSave={handleReceiptSave(row._index)}
-            onDelete={handleReceiptDelete(row._index)}
+            onSave={handleReceiptSave(row.id)}
+            onDelete={handleReceiptDelete(row.id)}
             formatDisplay={dateFormatDisplay}
+            getAttachmentViewUrl={url => (url.startsWith("http") ? url : `${BASE_URL}/${url}`)}
           />
         ) : <>-</>,
     },
@@ -463,7 +705,7 @@ export function Dashboard() {
     { key: "category", label: "OH Category", sortable: true },
     { key: "subCategory", label: "OH Sub-Category", sortable: true },
     { key: "department", label: "Department", sortable: true },
-    { key: "amount", label: "Amount", sortable: true, className: "text-right", format: a => typeof a === "number" ? formatINR(a) : "-" },
+    { key: "amount", label: "Amount", sortable: true, className: "text-right", format: a => (typeof a === "number" && !Number.isNaN(a)) || (typeof a === "string" && a !== "" && !Number.isNaN(Number(a))) ? formatINR(Number(a)) : "-" },
     { key: "attachment", label: "Attachment", format: attachmentCell },
     {
       key: "_index",
@@ -473,9 +715,10 @@ export function Dashboard() {
           <EditDeleteDialog
             row={row}
             fields={expenditureFields}
-            onSave={handleExpenditureSave(row._index)}
-            onDelete={handleExpenditureDelete(row._index)}
+            onSave={handleExpenditureSave(row.id)}
+            onDelete={handleExpenditureDelete(row.id)}
             formatDisplay={dateFormatDisplay}
+            getAttachmentViewUrl={url => (url.startsWith("http") ? url : `${BASE_URL}/${url}`)}
           />
         ) : <>-</>,
     },
@@ -550,6 +793,7 @@ export function Dashboard() {
   const maxExpenditureValue = useMemo(() => {
     return Math.max(...chartData.map(d => d.totalExpenditure), 0)
   }, [chartData])
+
   const dynamicChartHeight = useMemo(() => {
     const labelText = formatINR(maxExpenditureValue)
     const rotatedLabelHeight = labelText.length * 24 + 24
@@ -562,7 +806,6 @@ export function Dashboard() {
     const MAX_GAP = 8
     const TARGET_BAR = 32
     const slotWidth = containerWidth / chartData.length
-
     const minBarWidth = Math.max(2, slotWidth - MAX_GAP)
     const maxBarWidth = Math.max(2, slotWidth - MIN_GAP)
     const barWidth = Math.max(minBarWidth, Math.min(maxBarWidth, TARGET_BAR))
@@ -573,6 +816,30 @@ export function Dashboard() {
     const dates = [...receipts.map(r => r.date), ...expenditures.map(e => e.date), ...allocations.map(a => a.date)]
     return Array.from(new Set(dates.map(getFY))).sort().reverse()
   }, [receipts, expenditures, allocations])
+
+  const fyCategorySummary = useMemo(() => {
+    const rows: { fy: string; category: string; allocated: number; receipts: number; expenditure: number }[] = []
+    financialYears.forEach(fy => {
+      categories.forEach(cat => {
+        const allocated = allocations
+          .filter(a => getFY(a.date) === fy)
+          .reduce((sum, a) => sum + (a.categoryAmounts.find(ca => ca.category === cat)?.allocatedAmount ?? 0), 0)
+        const receiptsSum = receipts
+          .filter(r => getFY(r.date) === fy && r.category === cat)
+          .reduce((sum, r) => sum + r.amount, 0)
+        const expenditureSum = expenditures
+          .filter(e => getFY(e.date) === fy && e.category === cat)
+          .reduce((sum, e) => sum + e.amount, 0)
+        rows.push({ fy, category: cat, allocated, receipts: receiptsSum, expenditure: expenditureSum })
+      })
+    })
+    return rows
+  }, [financialYears, allocations, receipts, expenditures])
+
+  const fyOrderedList = useMemo(() =>
+    Array.from(new Set(fyCategorySummary.map(r => r.fy))),
+    [fyCategorySummary]
+  )
 
   const allocationsWithIndex = useMemo(
     () => allocations.map((a, i) => ({ ...a, _index: i })),
@@ -610,6 +877,25 @@ export function Dashboard() {
 
   const latestAllocationTable = allocationTables[0] ?? null
   const historyAllocationTables = allocationTables.slice(1)
+
+  const safeHistoryPage = Math.min(
+    historyPage,
+    Math.max(1, Math.ceil(historyAllocationTables.length / historyPerPage))
+  )
+  const fySummaryTotalPages = Math.max(1, Math.ceil(fyCategorySummary.length / reportPerPage))
+  const safeReportPage = Math.min(reportPage, fySummaryTotalPages)
+
+  const historyTotalPages = Math.max(1, Math.ceil(historyAllocationTables.length / historyPerPage))
+
+  const paginatedHistory = useMemo(() => {
+    const start = (safeHistoryPage - 1) * historyPerPage
+    return historyAllocationTables.slice(start, start + historyPerPage)
+  }, [historyAllocationTables, safeHistoryPage, historyPerPage])
+
+  const paginatedFySummary = useMemo(() => {
+    const start = (safeReportPage - 1) * reportPerPage
+    return fyCategorySummary.slice(start, start + reportPerPage)
+  }, [fyCategorySummary, safeReportPage, reportPerPage])
 
   const receiptsWithIndex = filteredReceiptTabData.map((r) => ({
     ...r,
@@ -772,8 +1058,8 @@ export function Dashboard() {
             <EditDeleteDialog
               row={allocationToFlat(table.entry)}
               fields={allocationFields}
-              onSave={formData => handleAllocationSave(table.entry._index)(formData as AllocationFlat)}
-              onDelete={handleAllocationDelete(table.entry._index)}
+              onSave={formData => handleAllocationSave(table.entry.id)(formData as AllocationFlat)}
+              onDelete={handleAllocationDelete(table.entry.id)}
               formatDisplay={dateFormatDisplay}
             />
           )}
@@ -889,20 +1175,26 @@ export function Dashboard() {
             <div className="mt-6">
               <button
                 onClick={() => setExpandedHistory(prev => {
-                  const allExpanded = historyAllocationTables.every(t => prev.has(t.allocationNumber))
-                  if (allExpanded) return new Set()
-                  return new Set(historyAllocationTables.map(t => t.allocationNumber))
+                  const allExpanded = paginatedHistory.every(t => prev.has(t.allocationNumber))
+                  if (allExpanded) {
+                    const next = new Set(prev)
+                    paginatedHistory.forEach(t => next.delete(t.allocationNumber))
+                    return next
+                  }
+                  const next = new Set(prev)
+                  paginatedHistory.forEach(t => next.add(t.allocationNumber))
+                  return next
                 })}
                 className="flex items-center gap-2 mb-3 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
               >
-                {historyAllocationTables.every(t => expandedHistory.has(t.allocationNumber))
+                {paginatedHistory.every(t => expandedHistory.has(t.allocationNumber))
                   ? <ChevronDown className="h-4 w-4" />
                   : <ChevronRight className="h-4 w-4" />}
                 History ({historyAllocationTables.length} allocation{historyAllocationTables.length !== 1 ? "s" : ""})
               </button>
 
               <div className="space-y-2">
-                {historyAllocationTables.map(table => (
+                {paginatedHistory.map(table => (
                   <div key={table.allocationNumber} className="border rounded-lg overflow-hidden">
                     <button
                       onClick={() => toggleHistoryRow(table.allocationNumber)}
@@ -925,8 +1217,8 @@ export function Dashboard() {
                             <EditDeleteDialog
                               row={allocationToFlat(table.entry)}
                               fields={allocationFields}
-                              onSave={formData => handleAllocationSave(table.entry._index)(formData as AllocationFlat)}
-                              onDelete={handleAllocationDelete(table.entry._index)}
+                              onSave={formData => handleAllocationSave(table.entry.id)(formData as AllocationFlat)}
+                              onDelete={handleAllocationDelete(table.entry.id)}
                               formatDisplay={dateFormatDisplay}
                             />
                           )}
@@ -942,6 +1234,16 @@ export function Dashboard() {
                   </div>
                 ))}
               </div>
+
+              <Pagination
+                currentPage={safeHistoryPage}
+                totalPages={historyTotalPages}
+                onPageChange={setHistoryPage}
+                itemsPerPage={historyPerPage}
+                totalItems={historyAllocationTables.length}
+                onItemsPerPageChange={n => { setHistoryPerPage(n); setHistoryPage(1) }}
+                itemLabel="allocations"
+              />
             </div>
           )}
         </>
@@ -1025,7 +1327,7 @@ export function Dashboard() {
               <p className="text-sm mt-1">Try adjusting or clearing some filters</p>
             </div>
           ) : (
-            <DataTable data={receiptsWithIndex} columns={receiptColumns} filters={[]} defaultSort="date" />
+            <DataTable data={receiptsWithIndex} columns={receiptColumns} filters={[]} defaultSort="date" defaultSortDirection="desc" />
           )}
         </>
       )}
@@ -1145,6 +1447,7 @@ export function Dashboard() {
               columns={expenditureColumns}
               filters={[]}
               defaultSort="date"
+              defaultSortDirection="desc"
             />
           )}
         </>
@@ -1152,6 +1455,65 @@ export function Dashboard() {
 
       {activeTab === "reports" && (
         <div className="space-y-6">
+          <div className="rounded-xl border bg-card">
+            <div className="p-4 border-b">
+              <h2 className="text-lg font-semibold">Summary by Financial Year & OH Category</h2>
+            </div>
+            <div className="overflow-x-auto px-4 py-2">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-primary hover:bg-primary">
+                    <TableHead className="text-white">Financial Year</TableHead>
+                    <TableHead className="text-white">OH Category</TableHead>
+                    <TableHead className="text-white text-right">Allocations</TableHead>
+                    <TableHead className="text-white text-right">Receipts</TableHead>
+                    <TableHead className="text-white text-right">Expenditure</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fyCategorySummary.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                        No data
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedFySummary.map((row) => {
+                      const fyIndex = fyOrderedList.indexOf(row.fy)
+                      const isOddFy = fyIndex % 2 === 0
+                      return (
+                        <TableRow
+                          key={`${row.fy}-${row.category}`}
+                          className={isOddFy ? "bg-background hover:bg-background" : "bg-muted hover:bg-muted"}
+                        >
+                          <TableCell className="font-medium">{row.fy}</TableCell>
+                          <TableCell>{row.category}</TableCell>
+                          <TableCell className="text-right">{formatINR(row.allocated)}</TableCell>
+                          <TableCell className="text-right">{formatINR(row.receipts)}</TableCell>
+                          <TableCell className="text-right">{formatINR(row.expenditure)}</TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {fyCategorySummary.length > 0 && (
+              <div className="px-4 pb-4">
+                <Pagination
+                  currentPage={safeReportPage}
+                  totalPages={fySummaryTotalPages}
+                  onPageChange={setReportFyPage}
+                  itemsPerPage={reportPerPage}
+                  totalItems={fyCategorySummary.length}
+                  onItemsPerPageChange={n => { setReportFyPerPage(n); setReportFyPage(1) }}
+                  itemLabel="rows"
+                />
+              </div>
+            )}
+          </div>
+
           <FilterCard
             title="Report Filters"
             onClear={() => { setReportType(null); resetReportFilters() }}
@@ -1406,6 +1768,7 @@ export function Dashboard() {
                     columns={expenditureColumns}
                     filters={[]}
                     defaultSort="date"
+                    defaultSortDirection="desc"
                   />
                 )}
 
@@ -1420,6 +1783,7 @@ export function Dashboard() {
                     columns={receiptColumns}
                     filters={[]}
                     defaultSort="date"
+                    defaultSortDirection="desc"
                   />
                 )}
               </div>
@@ -1432,9 +1796,9 @@ export function Dashboard() {
         <div className="space-y-2">
           <div className="flex flex-col md:flex-row gap-2 items-stretch">
 
-            <div className="flex-2 flex flex-col justify-between items-center px-4 py-4 rounded-lg border" ref={chartWrapperRef}>
+            <div className="flex-2 flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-2/3" ref={chartWrapperRef}>
               <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
-              <div className="mb-12">
+              <div className="mb-2 w-full">
                 <ChartContainer
                   config={chartConfig}
                   style={{ height: dynamicChartHeight, width: "100%" }}
@@ -1537,10 +1901,10 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col items-center px-4 py-4 rounded-lg border shrink-0">
+            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-2/3">
               <h3 className="text-md font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
 
-              <div className="relative flex flex-col items-center justify-center w-full" ref={pieWrapperRef}>
+              <div className="relative flex flex-col items-center justify-center w-5/6" ref={pieWrapperRef}>
                 <PieChart width={pieSize} height={pieSize}>
                   <Pie
                     data={innerPieData}
@@ -1553,10 +1917,7 @@ export function Dashboard() {
                     isAnimationActive={true}
                   >
                     {innerPieData.map((entry, index) => (
-                      <Cell
-                        key={`inner-${index}`}
-                        fill={entry.fill}
-                      />
+                      <Cell key={`inner-${index}`} fill={entry.fill} />
                     ))}
                   </Pie>
 
@@ -1572,10 +1933,7 @@ export function Dashboard() {
                     isAnimationActive={true}
                   >
                     {outerPieData.map((entry, index) => (
-                      <Cell
-                        key={`outer-${index}`}
-                        fill={entry.fill}
-                      />
+                      <Cell key={`outer-${index}`} fill={entry.fill} />
                     ))}
                   </Pie>
 

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react"
-import { Search } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -26,6 +27,7 @@ type DataTableProps<T> = {
   columns: Column<T>[]
   filters?: Filter<T>[]
   defaultSort?: keyof T
+  defaultSortDirection?: "asc" | "desc"
   title?: string
   dynamicSelectOptions?: Record<string, (filterValues: Record<string, string>) => string[]>
   rowsPerPage?: number
@@ -34,14 +36,113 @@ type DataTableProps<T> = {
   truncateLength?: number
 }
 
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+  itemsPerPage,
+  totalItems,
+  onItemsPerPageChange,
+}: {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  itemsPerPage: number
+  totalItems: number
+  onItemsPerPageChange: (n: number) => void
+}) {
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems)
+
+  const getPageNumbers = (): (number | "...")[] => {
+    const pages: (number | "...")[] = []
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i)
+    } else {
+      pages.push(1)
+      if (currentPage > 3) pages.push("...")
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i)
+      }
+      if (currentPage < totalPages - 2) pages.push("...")
+      pages.push(totalPages)
+    }
+    return pages
+  }
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t mt-3">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Show</span>
+        <Select
+          value={String(itemsPerPage)}
+          onValueChange={v => { onItemsPerPageChange(Number(v)); onPageChange(1) }}
+        >
+          <SelectTrigger className="h-8 w-16 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[5, 10, 20, 50].map(n => (
+              <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span>rows per page</span>
+        {totalItems > 0 && (
+          <span className="hidden sm:inline text-xs">
+            — {startItem}–{endItem} of {totalItems}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        {getPageNumbers().map((page, i) =>
+          page === "..." ? (
+            <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-sm select-none">…</span>
+          ) : (
+            <Button
+              key={page}
+              variant={currentPage === page ? "default" : "outline"}
+              size="icon"
+              className="h-8 w-8 text-xs"
+              onClick={() => onPageChange(page as number)}
+            >
+              {page}
+            </Button>
+          )
+        )}
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages || totalPages === 0}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function DataTable<T extends Record<string, unknown>>({
   data,
   columns,
   filters = [],
   defaultSort,
+  defaultSortDirection = "desc",
   title,
   dynamicSelectOptions = {},
-  rowsPerPage = 5,
+  rowsPerPage: initialRowsPerPage = 5,
   performPagination = true,
   showResultCount = true,
   truncateLength = 36,
@@ -52,10 +153,12 @@ export function DataTable<T extends Record<string, unknown>>({
 
   const [sortConfig, setSortConfig] = useState<{ key: keyof T | null; direction: "asc" | "desc" }>({
     key: defaultSort || null,
-    direction: "desc",
+    direction: defaultSortDirection,
   })
 
   const [currentPage, setCurrentPage] = useState(1)
+
+  const [rowsPerPage, setRowsPerPage] = useState(initialRowsPerPage)
 
   const truncate = (val: unknown): React.ReactNode => {
     if (typeof val !== "string") return val as React.ReactNode
@@ -113,13 +216,14 @@ export function DataTable<T extends Record<string, unknown>>({
     })
   }, [data, filterValues, sortConfig, filters])
 
-  const totalPages = performPagination ? Math.ceil(processed.length / rowsPerPage) : 1
+  const totalPages = performPagination ? Math.max(1, Math.ceil(processed.length / rowsPerPage)) : 1
+  const safePage = Math.min(currentPage, totalPages)
 
   const paginatedData = useMemo(() => {
     if (!performPagination) return processed
-    const start = (currentPage - 1) * rowsPerPage
+    const start = (safePage - 1) * rowsPerPage
     return processed.slice(start, start + rowsPerPage)
-  }, [processed, currentPage, rowsPerPage, performPagination])
+  }, [processed, safePage, rowsPerPage, performPagination])
 
   const arrow = (key: keyof T) => (sortConfig.key === key ? (sortConfig.direction === "asc" ? " ↑" : " ↓") : "")
   const isRangeFilter = (key: string) => key.endsWith("Min") || key.endsWith("Max") || key === "dateFrom" || key === "dateTo"
@@ -215,7 +319,7 @@ export function DataTable<T extends Record<string, unknown>>({
           {paginatedData.length ? (
             paginatedData.map((row, i) => (
               <TableRow key={i}>
-                <TableCell>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                <TableCell>{(safePage - 1) * rowsPerPage + i + 1}</TableCell>
                 {columns.map(col => (
                   <TableCell
                     key={col.key as string}
@@ -238,27 +342,14 @@ export function DataTable<T extends Record<string, unknown>>({
       </Table>
 
       {performPagination && (
-        <div className="flex justify-between items-center mt-4 text-sm">
-          <div>
-            Page {currentPage} of {totalPages}
-          </div>
-          <div className="flex gap-2">
-            <button
-              disabled={currentPage === 1}
-              className="px-2 py-1 border rounded disabled:opacity-50"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            >
-              ‹
-            </button>
-            <button
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="px-2 py-1 border rounded disabled:opacity-50"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            >
-              ›
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={safePage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          itemsPerPage={rowsPerPage}
+          totalItems={processed.length}
+          onItemsPerPageChange={n => { setRowsPerPage(n); setCurrentPage(1) }}
+        />
       )}
 
       {showResultCount && (

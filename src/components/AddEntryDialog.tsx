@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-type FieldValue = string | number | Date
+type FieldValue = string | number | Date | File
 
 type FieldConfig = {
   key: string
   label: string
-  type: "text" | "number" | "date" | "select"
+  type: "text" | "number" | "date" | "select" | "file"
   options?: string[]
   required?: boolean
   dependsOn?: string
@@ -63,6 +63,8 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
         processedData[field.key] = new Date(value as string)
       } else if (field.type === "number") {
         processedData[field.key] = parseFloat(value as string) || 0
+      } else if (field.type === "file") {
+        processedData[field.key] = value ?? ""
       } else {
         processedData[field.key] = value
       }
@@ -155,6 +157,14 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
                     value={String(formData[field.key] ?? "")}
                     onChange={e => updateField(field.key, e.target.value)}
                     placeholder={`Enter ${field.label}`}
+                  />
+                ) : field.type === "file" ? (
+                  <Input
+                    id={field.key}
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={e => updateField(field.key, e.target.files?.[0] ?? "")}
+                    className="cursor-pointer"
                   />
                 ) : (
                   <Input

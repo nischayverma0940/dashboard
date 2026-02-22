@@ -1,30 +1,17 @@
 import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export type FieldValue = string | number | boolean | Date | null | undefined;
+export type FieldValue = string | number | boolean | Date | File | null | undefined;
 
 type FieldConfig = {
   key: string;
   label: string;
-  type: "text" | "number" | "date" | "select";
+  type: "text" | "number" | "date" | "select" | "file";
   options?: string[];
   disabled?: boolean;
 };
@@ -35,6 +22,7 @@ type EditDeleteDialogProps<T> = {
   onSave: (data: T) => void;
   onDelete: (data: T) => void;
   formatDisplay?: (key: string, value: FieldValue) => string;
+  getAttachmentViewUrl?: (path: string) => string;
 };
 
 export function EditDeleteDialog<T extends Record<string, FieldValue>>({
@@ -43,6 +31,7 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
   onSave,
   onDelete,
   formatDisplay,
+  getAttachmentViewUrl,
 }: EditDeleteDialogProps<T>) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -72,6 +61,7 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
     if (value instanceof Date) {
       return value.toISOString().split("T")[0];
     }
+    if (value instanceof File) return value.name;
     return String(value ?? "");
   };
 
@@ -150,6 +140,37 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
                       }
                       disabled={field.disabled}
                     />
+                  ) : field.type === "file" ? (
+                    <div className="space-y-2">
+                      {formData[field.key] && typeof formData[field.key] === "string" && formData[field.key] !== "" && (
+                        <p className="text-sm text-muted-foreground">
+                          Current:{" "}
+                          {getAttachmentViewUrl ? (
+                            <a
+                              href={getAttachmentViewUrl(formData[field.key] as string)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 underline"
+                            >
+                              View
+                            </a>
+                          ) : (
+                            "on file"
+                          )}
+                        </p>
+                      )}
+                      <Input
+                        id={field.key}
+                        type="file"
+                        accept=".pdf,image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) updateField(field.key, f);
+                        }}
+                        className="cursor-pointer"
+                        disabled={field.disabled}
+                      />
+                    </div>
                   ) : (
                     <Input
                       id={field.key}
