@@ -22,6 +22,28 @@ type Scale = "absolute" | "thousands" | "lakhs" | "crores"
 type Tab = "summary" | "allocations" | "receipts" | "expenditures" | "reports"
 
 const BASE_URL = (import.meta.env?.VITE_BASE_URL as string | undefined) ?? "http://localhost:3000/"
+const ERP_LOGIN_URL = "https://nitj.ac.in"
+
+async function apiFetch(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  })
+
+  if (res.status === 401) {
+    window.location.href = ERP_LOGIN_URL
+    throw new Error("Unauthorized — redirecting to ERP login")
+  }
+
+  return res
+}
 
 type Receipt = {
   id: number
@@ -305,6 +327,8 @@ export function Dashboard() {
   const [allocations, setAllocations] = useState<Allocation[]>([])
   const [expenditures, setExpenditures] = useState<Expenditure[]>([])
 
+  const [canModify, setCanModify] = useState(false)
+
   const [allocationFilters, setAllocationFilters] = useState<AllocationFilters>({})
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set())
 
@@ -380,21 +404,23 @@ export function Dashboard() {
     Array.isArray(data) ? data : (data as { data?: T[] } | null)?.data ?? []
 
   const fetchReceipts = useCallback(async () => {
-    const res = await fetch(`${BASE_URL}/receipts/read.php`)
+    const res = await apiFetch("receipts/read.php")
     if (!res.ok) return
     const data = await res.json()
     const list = parseList<Receipt & { date: string }>(data)
     setReceipts(list.map(r => ({ ...r, date: parseDate(r.date), amount: Number(r.amount) || 0 })))
   }, [])
+
   const fetchExpenditures = useCallback(async () => {
-    const res = await fetch(`${BASE_URL}/expenditures/read.php`)
+    const res = await apiFetch("expenditures/read.php")
     if (!res.ok) return
     const data = await res.json()
     const list = parseList<Expenditure & { date: string }>(data)
     setExpenditures(list.map(e => ({ ...e, date: parseDate(e.date), amount: Number(e.amount) || 0 })))
   }, [])
+
   const fetchAllocations = useCallback(async () => {
-    const res = await fetch(`${BASE_URL}/allocations/read.php`)
+    const res = await apiFetch("allocations/read.php")
     if (!res.ok) return
     const data = await res.json()
     const list = parseList<Allocation & { date: string }>(data)
@@ -402,12 +428,13 @@ export function Dashboard() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchReceipts()
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchExpenditures()
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchAllocations()
+    apiFetch("canModify")
+      .then(res => res.json())
+      .then((data: { allowed: boolean }) => setCanModify(data.allowed))
+      .catch(() => setCanModify(false))
   }, [fetchReceipts, fetchExpenditures, fetchAllocations])
 
   const pieSize = Math.max(180, pieContainerWidth)
@@ -418,8 +445,6 @@ export function Dashboard() {
   const outerOuterR = Math.round(pieR * 0.901)
   const outerMidR = (outerInnerR + outerOuterR) / 2
   const outerPaddingAngle = (TANGENTIAL_GAP_PX / outerMidR) * (180 / Math.PI)
-
-  const canModify = true
 
   const formatINR = useCallback((value: number): string => {
     let displayValue = value
@@ -483,7 +508,7 @@ export function Dashboard() {
       allocationNumber: body.allocationNumber,
       categoryAmounts: body.categoryAmounts,
     }
-    const res = await fetch(`${BASE_URL}/allocations/create.php`, {
+    const res = await fetch(`${BASE_URL}allocations/create.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -494,7 +519,7 @@ export function Dashboard() {
   const handleAllocationSave = (id: number) => async (formData: AllocationFlat) => {
     const body = flatToAllocation(formData)
     const payload = allocationToBody({ ...body, id })
-    const res = await fetch(`${BASE_URL}/allocations/update.php`, {
+    const res = await fetch(`${BASE_URL}allocations/update.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -503,7 +528,7 @@ export function Dashboard() {
   }
 
   const handleAllocationDelete = (id: number) => async () => {
-    const res = await fetch(`${BASE_URL}/allocations/delete.php?id=${id}`, { method: "DELETE" })
+    const res = await fetch(`${BASE_URL}allocations/delete.php?id=${id}`, { method: "DELETE" })
     if (res.ok) await fetchAllocations()
   }
 
@@ -511,7 +536,7 @@ export function Dashboard() {
     const form = new FormData()
     form.append("type", type)
     form.append("file", file)
-    const res = await fetch(`${BASE_URL}/upload.php`, { method: "POST", body: form })
+    const res = await fetch(`${BASE_URL}upload.php`, { method: "POST", body: form })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error((err as { error?: string }).error ?? "Upload failed")
@@ -537,7 +562,7 @@ export function Dashboard() {
       amount: r.amount,
       attachment: attachmentUrl,
     }
-    const res = await fetch(`${BASE_URL}/receipts/create.php`, {
+    const res = await fetch(`${BASE_URL}receipts/create.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -553,7 +578,7 @@ export function Dashboard() {
       attachmentUrl = r.attachment ?? ""
     }
     const body = receiptToBody({ ...r, id, attachment: attachmentUrl })
-    const res = await fetch(`${BASE_URL}/receipts/update.php`, {
+    const res = await fetch(`${BASE_URL}receipts/update.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -562,7 +587,7 @@ export function Dashboard() {
   }
 
   const handleReceiptDelete = (id: number) => async () => {
-    const res = await fetch(`${BASE_URL}/receipts/delete.php?id=${id}`, { method: "DELETE" })
+    const res = await fetch(`${BASE_URL}receipts/delete.php?id=${id}`, { method: "DELETE" })
     if (res.ok) await fetchReceipts()
   }
 
@@ -583,7 +608,7 @@ export function Dashboard() {
       amount: e.amount,
       attachment: attachmentUrl,
     }
-    const res = await fetch(`${BASE_URL}/expenditures/create.php`, {
+    const res = await fetch(`${BASE_URL}expenditures/create.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -599,7 +624,7 @@ export function Dashboard() {
       attachmentUrl = e.attachment ?? ""
     }
     const body = expenditureToBody({ ...e, id, attachment: attachmentUrl })
-    const res = await fetch(`${BASE_URL}/expenditures/update.php`, {
+    const res = await fetch(`${BASE_URL}expenditures/update.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -608,7 +633,7 @@ export function Dashboard() {
   }
 
   const handleExpenditureDelete = (id: number) => async () => {
-    const res = await fetch(`${BASE_URL}/expenditures/delete.php?id=${id}`, { method: "DELETE" })
+    const res = await fetch(`${BASE_URL}expenditures/delete.php?id=${id}`, { method: "DELETE" })
     if (res.ok) await fetchExpenditures()
   }
 

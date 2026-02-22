@@ -23,7 +23,7 @@ function generateMockReceipts(count = 40) {
     return {
       id: i + 1,
       date: randomDateString(),
-      sanctionOrder: `SO/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
+      sanctionOrder: `S/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
       category,
       amount: randomInt(50_000, 50_00_000),
       attachment: "",
@@ -35,7 +35,7 @@ function generateMockAllocations(count = 10) {
   return Array.from({ length: count }, (_, i) => ({
     id: i + 1,
     date: randomDateString("2021-04-01", "2024-03-31"),
-    allocationNumber: `ALLOC/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
+    allocationNumber: `A/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
     categoryAmounts: CATEGORIES.map((category) => ({
       category,
       allocatedAmount: randomInt(1_00_000, 20_00_000),
@@ -50,8 +50,8 @@ function generateMockExpenditures(count = 80) {
     return {
       id: i + 1,
       date: randomDateString(),
-      billNo: `BILL/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
-      voucherNo: `VCH/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
+      billNo: `B/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
+      voucherNo: `V/${randomInt(2021, 2024)}/${zeroPad(i + 1)}`,
       category,
       subCategory,
       department: pickRandom(DEPARTMENTS),
@@ -71,6 +71,10 @@ let expenditureIdCounter = mockExpenditures.length + 1;
 type MockRouteHandler = (url: URL, init?: RequestInit) => unknown;
 
 const mockRoutes: [RegExp, MockRouteHandler][] = [
+  [
+    /canModify/,
+    () => ({ allowed: true }),
+  ],
   [
     /receipts\/read\.php/,
     () => ({ data: mockReceipts }),
