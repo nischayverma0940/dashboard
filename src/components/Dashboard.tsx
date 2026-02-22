@@ -1940,6 +1940,24 @@ export function Dashboard() {
                     dataKey="value"
                     stroke="none"
                     isAnimationActive={true}
+                    labelLine={false}
+                    label={({ cx, cy, midAngle, innerRadius, outerRadius, name }) => {
+                      const RADIAN = Math.PI / 180
+                      const radius = innerRadius + (outerRadius - innerRadius) / 2
+                      const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                      const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                      return (
+                        <text
+                          x={x}
+                          y={y}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          style={{ fontSize: 9, fontWeight: 500, fill: "#fff", pointerEvents: "none" }}
+                        >
+                          {String(name).slice(0, 5)}
+                        </text>
+                      )
+                    }}
                   >
                     {innerPieData.map((entry, index) => (
                       <Cell key={`inner-${index}`} fill={entry.fill} />
