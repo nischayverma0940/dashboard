@@ -1797,7 +1797,7 @@ export function Dashboard() {
 
             return (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
                     { label: "Total Records", value: filteredReportData.length.toLocaleString() },
                     { label: "Total Amount", value: formatINR(totalAmount) },
