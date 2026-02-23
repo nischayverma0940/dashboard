@@ -175,6 +175,22 @@ const resolveColorToRgba = (color: string, alpha: number): string => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+const hexToHsl = (hex: string): [number, number, number] => {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return [0, 0, Math.round(l * 100)]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else h = ((r - g) / d + 4) / 6
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)]
+}
+
 function makeCategorySeparator(chartData: ChartDataItem[]) {
   return function CategorySeparator(rechartsProps: Record<string, unknown>) {
     const xAxisMap = rechartsProps.xAxisMap as
@@ -437,7 +453,7 @@ export function Dashboard() {
     if (!el) return
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
-        if (entry.contentRect.width > 0) setPieContainerWidth(entry.contentRect.width)
+        if (entry.contentRect.width > 0) setPieContainerWidth(entry.contentRect.width - 2)
       }
     })
     observer.observe(el)
@@ -505,11 +521,9 @@ export function Dashboard() {
   }, [scale])
 
   const toggleRow = (category: string) => {
-    setExpandedRows(prev => {
-      const next = new Set(prev)
-      next.has(category) ? next.delete(category) : next.add(category)
-      return next
-    })
+    setExpandedRows(prev =>
+      prev.has(category) ? new Set() : new Set([category])
+    )
   }
 
   const toggleHistoryRow = (allocationNumber: string) => {
@@ -1068,6 +1082,28 @@ export function Dashboard() {
     }),
     [pieCategoryData])
 
+  const subCategoryColors = useMemo<Record<string, string>>(() => {
+    if (expandedRows.size === 0) return {}
+    const colorMap: Record<string, string> = {}
+    summaryCategoryData
+      .filter(c => expandedRows.has(c.category))
+      .forEach(c => {
+        const baseHex =
+          CATEGORY_COLORS[categories.indexOf(c.category) % CATEGORY_COLORS.length]
+        const [h, , baseLightness] = hexToHsl(baseHex)
+        const subs = c.subCategories.filter(s => s.totalExpenditure > 0)
+        const count = subs.length
+        subs.forEach((sub, i) => {
+          const t = count === 1 ? 0 : i / (count - 1)
+          const sat = Math.round(92 - t * 32)
+          const light = Math.round(baseLightness + (1 - t) * 6)
+          colorMap[sub.subCategory] = `hsl(${h}, ${sat}%, ${light}%)`
+        })
+      })
+
+    return colorMap
+  }, [summaryCategoryData, expandedRows])
+
   const outerPieData = useMemo(() =>
     pieCategoryData.flatMap((row) => {
       const idx = categories.indexOf(row.category)
@@ -1091,7 +1127,7 @@ export function Dashboard() {
           name: sub.subCategory,
           label: "Expenditure",
           value: sub.totalExpenditure,
-          fill: solid,
+          fill: subCategoryColors[sub.subCategory] ?? solid,
           category: row.category,
         }))
 
@@ -1110,7 +1146,7 @@ export function Dashboard() {
 
       return subSegments
     }),
-    [pieCategoryData, expandedRows])
+    [pieCategoryData, expandedRows, subCategoryColors])
 
   const renderAllocationCard = (
     table: typeof allocationTables[number],
@@ -1871,7 +1907,7 @@ export function Dashboard() {
         <div className="space-y-2">
           <div className="flex flex-col md:flex-row gap-2 items-stretch">
 
-            <div className="flex-2 flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-2/3" ref={chartWrapperRef}>
+            <div className="flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-2/3" ref={chartWrapperRef}>
               <h3 className="text-lg font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
               <div className="mb-2 w-full">
                 <ChartContainer
@@ -1930,7 +1966,9 @@ export function Dashboard() {
                       {chartData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid}
+                          fill={expandedRows.size > 0 && subCategoryColors[entry.subCategory]
+                            ? subCategoryColors[entry.subCategory]
+                            : RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid}
                         />
                       ))}
                     </Bar>
@@ -1964,26 +2002,39 @@ export function Dashboard() {
                 </ChartContainer>
 
                 <div className="flex flex-wrap justify-center gap-x-2 gap-y-2 mt-8 border-t pt-2">
-                  {categoryLegend.map((item, i) => (
-                    <div
-                      key={item.name}
-                      className="flex items-center gap-2 text-xs font-medium px-2 py-1"
-                    >
-                      <span
-                        className="w-4 h-4 rounded-lg shrink-0"
-                        style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
-                      />
-                      <span>{item.name}</span>
-                    </div>
-                  ))}
+                  {expandedRows.size > 0
+                    ? chartData.map((entry) => (
+                      <div
+                        key={`${entry.parentCategory}-${entry.subCategory}`}
+                        className="flex items-center gap-2 text-xs font-medium px-2 py-1"
+                      >
+                        <span
+                          className="w-4 h-4 rounded-lg shrink-0"
+                          style={{ backgroundColor: subCategoryColors[entry.subCategory] ?? RICH_COLORS[categories.indexOf(entry.parentCategory) % RICH_COLORS.length].solid }}
+                        />
+                        <span>{entry.subCategory}</span>
+                      </div>
+                    ))
+                    : categoryLegend.map((item, i) => (
+                      <div
+                        key={item.name}
+                        className="flex items-center gap-2 text-xs font-medium px-2 py-1"
+                      >
+                        <span
+                          className="w-4 h-4 rounded-lg shrink-0"
+                          style={{ backgroundColor: RICH_COLORS[i % RICH_COLORS.length].solid }}
+                        />
+                        <span>{item.name}</span>
+                      </div>
+                    ))
+                  }
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-2/3">
+            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-1/3">
               <h3 className="text-lg font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
-
-              <div className="relative flex flex-col items-center justify-center w-5/6" ref={pieWrapperRef}>
+              <div className="relative flex flex-col items-center justify-center w-full" ref={pieWrapperRef}>
                 <PieChart width={pieSize} height={pieSize}>
                   <Pie
                     data={innerPieData}
@@ -1994,24 +2045,6 @@ export function Dashboard() {
                     dataKey="value"
                     stroke="none"
                     isAnimationActive={true}
-                    labelLine={false}
-                    label={({ cx, cy, midAngle, innerRadius, outerRadius, name }) => {
-                      const RADIAN = Math.PI / 180
-                      const radius = innerRadius + (outerRadius - innerRadius) / 2
-                      const x = cx + radius * Math.cos(-midAngle * RADIAN)
-                      const y = cy + radius * Math.sin(-midAngle * RADIAN)
-                      return (
-                        <text
-                          x={x}
-                          y={y}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          style={{ fontSize: 11, fontWeight: 500, fill: "#fff", pointerEvents: "none" }}
-                        >
-                          {String(name).slice(0, 5)}
-                        </text>
-                      )
-                    }}
                   >
                     {innerPieData.map((entry, index) => (
                       <Cell key={`inner-${index}`} fill={entry.fill} />
@@ -2028,6 +2061,19 @@ export function Dashboard() {
                     stroke="none"
                     paddingAngle={outerPaddingAngle}
                     isAnimationActive={true}
+                    label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload }: { cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number; payload: { label?: string } }) => {
+                      if (percent < 0.04 || payload?.label === "Balance") return null
+                      const RADIAN = Math.PI / 180
+                      const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+                      const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                      const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                      return (
+                        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={9} fontWeight={700}>
+                          {`${(percent * 100).toFixed(0)}%`}
+                        </text>
+                      )
+                    }}
+                    labelLine={false}
                   >
                     {outerPieData.map((entry, index) => (
                       <Cell key={`outer-${index}`} fill={entry.fill} />
@@ -2055,33 +2101,60 @@ export function Dashboard() {
 
               <div className="mt-4 w-full space-y-1">
                 <div className="w-full flex flex-row justify-between text-xs text-muted-foreground border-b pb-2 px-2">
-                  <span>Category</span>
-                  <span>Balance</span>
+                  <span>{expandedRows.size > 0 ? "Sub-Category" : "Category"}</span>
+                  <span>Expenditure</span>
                 </div>
                 <div className="pt-1 space-y-1">
-                  {pieCategoryData.map((row) => {
-                    const idx = categories.indexOf(row.category)
-                    const color = RICH_COLORS[idx % RICH_COLORS.length].solid
-                    return (
-                      <div
-                        key={row.category}
-                        className="w-full flex items-center justify-between px-2 py-1 rounded-md text-xs"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: color }}
-                          />
-                          <span className="truncate text-left" style={{ maxWidth: 140 }}>
-                            {row.category.slice(0, 5)}
+                  {expandedRows.size > 0
+                    ? summaryCategoryData
+                      .filter(c => expandedRows.has(c.category))
+                      .flatMap(c => c.subCategories.filter(s => s.totalExpenditure > 0).map(s => ({ ...s, parentCategory: c.category })))
+                      .map((sub) => {
+                        const color = subCategoryColors[sub.subCategory] ?? RICH_COLORS[categories.indexOf(sub.parentCategory) % RICH_COLORS.length].solid
+                        return (
+                          <div
+                            key={`${sub.parentCategory}-${sub.subCategory}`}
+                            className="w-full flex items-center justify-between px-2 py-1 rounded-md text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="truncate text-left" style={{ maxWidth: 140 }}>
+                                {sub.subCategory.slice(0, 5)}
+                              </span>
+                            </div>
+                            <span className="tabular-nums text-muted-foreground ml-2 shrink-0">
+                              {formatINR(sub.totalExpenditure)}
+                            </span>
+                          </div>
+                        )
+                      })
+                    : pieCategoryData.map((row) => {
+                      const idx = categories.indexOf(row.category)
+                      const color = RICH_COLORS[idx % RICH_COLORS.length].solid
+                      return (
+                        <div
+                          key={row.category}
+                          className="w-full flex items-center justify-between px-2 py-1 rounded-md text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="truncate text-left" style={{ maxWidth: 140 }}>
+                              {row.category.slice(0, 5)}
+                            </span>
+                          </div>
+                          <span className="tabular-nums text-muted-foreground ml-2 shrink-0">
+                            {formatINR(row.totalExpenditure)}
                           </span>
                         </div>
-                        <span className="tabular-nums text-muted-foreground ml-2 shrink-0">
-                          {formatINR(row.totalReceipts - row.totalExpenditure)}
-                        </span>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  }
                 </div>
               </div>
             </div>
