@@ -12,16 +12,16 @@ import type { Column } from "./DataTable"
 import { EditDeleteDialog } from "./EditDeleteDialog"
 import { AddEntryDialog } from "./AddEntryDialog"
 import type { LabelProps } from "recharts"
-import { Bar, BarChart, Cell, XAxis, PieChart, Pie, Tooltip as RechartsTooltip } from "recharts"
+import { Bar, BarChart, Cell, XAxis, PieChart, Pie, Customized, Tooltip as RechartsTooltip } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { categories, subCategoriesMap, departments } from "@/models/data"
 import type { FieldValue } from "./EditDeleteDialog"
-import "@/lib/mock";
+import "@/lib/mock"
 
 type Scale = "absolute" | "thousands" | "lakhs" | "crores"
 type Tab = "summary" | "allocations" | "receipts" | "expenditures" | "reports"
 
-const BASE_URL = (import.meta.env?.VITE_BASE_URL as string | undefined) ?? "http://localhost:3000/"
+const BASE_URL = (import.meta.env?.VITE_BASE_URL as string | undefined) ?? "http://localhost:8000/"
 const ERP_LOGIN_URL = "https://nitj.ac.in"
 
 async function apiFetch(
@@ -103,6 +103,8 @@ type FieldFormData = {
   [key: string]: string | number | Date | File | undefined
 }
 
+type ChartDataItem = SubCategorySummary
+
 const TABS: { value: Tab; label: string }[] = [
   { value: "summary", label: "Summary" },
   { value: "allocations", label: "Allocations" },
@@ -171,6 +173,49 @@ const resolveColorToRgba = (color: string, alpha: number): string => {
   const g = parseInt(hex.substring(2, 4), 16)
   const b = parseInt(hex.substring(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function makeCategorySeparator(chartData: ChartDataItem[]) {
+  return function CategorySeparator(rechartsProps: Record<string, unknown>) {
+    const xAxisMap = rechartsProps.xAxisMap as
+      | Record<string, { scale: ((v: string) => number) & { bandwidth?: () => number } }>
+      | undefined
+    const height = rechartsProps.height as number | undefined
+    const margin = rechartsProps.margin as { top?: number; right?: number; bottom?: number; left?: number } | undefined
+
+    if (!xAxisMap || !chartData.length) return null
+    const xAxis = Object.values(xAxisMap)[0]
+    if (!xAxis?.scale) return null
+    const xScale = xAxis.scale
+    const bandwidth = xScale.bandwidth?.() ?? 0
+    const top = margin?.top ?? 0
+    const chartHeight = (height ?? 0) - top - (margin?.bottom ?? 0)
+
+    const lines: number[] = []
+    for (let i = 1; i < chartData.length; i++) {
+      if (chartData[i].parentCategory !== chartData[i - 1].parentCategory) {
+        lines.push(
+          (xScale(chartData[i - 1].subCategory) + bandwidth + xScale(chartData[i].subCategory)) / 2
+        )
+      }
+    }
+
+    return (
+      <g>
+        {lines.map((x, i) => (
+          <line
+            key={i}
+            x1={x} x2={x}
+            y1={top} y2={top + chartHeight}
+            stroke="#888"
+            strokeWidth={1}
+            strokeDasharray="5 4"
+            strokeOpacity={0.8}
+          />
+        ))}
+      </g>
+    )
+  }
 }
 
 function Pagination({
@@ -431,7 +476,7 @@ export function Dashboard() {
     void fetchReceipts()
     void fetchExpenditures()
     void fetchAllocations()
-    apiFetch("canModify")
+    apiFetch("canModify.php")
       .then(res => res.json())
       .then((data: { allowed: boolean }) => setCanModify(data.allowed))
       .catch(() => setCanModify(false))
@@ -814,6 +859,11 @@ export function Dashboard() {
     if (expandedRows.size === 0) return summaryCategoryData.flatMap(c => c.subCategories)
     return summaryCategoryData.filter(c => expandedRows.has(c.category)).flatMap(c => c.subCategories)
   }, [summaryCategoryData, expandedRows])
+
+  const CategorySeparatorComponent = useMemo(
+    () => makeCategorySeparator(chartData) as Parameters<typeof Customized>[0]["component"],
+    [chartData]
+  )
 
   const maxExpenditureValue = useMemo(() => {
     return Math.max(...chartData.map(d => d.totalExpenditure), 0)
@@ -1822,7 +1872,7 @@ export function Dashboard() {
           <div className="flex flex-col md:flex-row gap-2 items-stretch">
 
             <div className="flex-2 flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-2/3" ref={chartWrapperRef}>
-              <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
+              <h3 className="text-lg font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
               <div className="mb-2 w-full">
                 <ChartContainer
                   config={chartConfig}
@@ -1906,6 +1956,10 @@ export function Dashboard() {
                       axisLine={false}
                       interval={0}
                     />
+                    <Customized
+                      key={chartData.map(d => d.subCategory).join(",")}
+                      component={CategorySeparatorComponent}
+                    />
                   </BarChart>
                 </ChartContainer>
 
@@ -1927,7 +1981,7 @@ export function Dashboard() {
             </div>
 
             <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-2/3">
-              <h3 className="text-md font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
+              <h3 className="text-lg font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
 
               <div className="relative flex flex-col items-center justify-center w-5/6" ref={pieWrapperRef}>
                 <PieChart width={pieSize} height={pieSize}>
@@ -1952,7 +2006,7 @@ export function Dashboard() {
                           y={y}
                           textAnchor="middle"
                           dominantBaseline="central"
-                          style={{ fontSize: 9, fontWeight: 500, fill: "#fff", pointerEvents: "none" }}
+                          style={{ fontSize: 11, fontWeight: 500, fill: "#fff", pointerEvents: "none" }}
                         >
                           {String(name).slice(0, 5)}
                         </text>
@@ -2034,7 +2088,7 @@ export function Dashboard() {
           </div>
 
           <div className="overflow-hidden border rounded-lg">
-            <table className="w-full text-sm">
+            <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted">
                   <th className="px-4 py-3 text-left font-medium w-8" />
