@@ -111,7 +111,7 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
           {buttonLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-x-clip overflow-y-auto flex flex-col items-center">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -120,19 +120,19 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
         </DialogHeader>
         <div className="grid gap-4 py-4">
           {fields.map(field => (
-            <div key={field.key} className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor={field.key}>
+            <div key={field.key} className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4">
+              <Label htmlFor={field.key} className="sm:text-right">
                 {field.label}
               </Label>
-              <div className="col-span-3">
+              <div className="sm:col-span-3 min-w-0 overflow-hidden">
                 {field.type === "select" ? (
                   <Select
                     value={String(formData[field.key] ?? "")}
                     onValueChange={v => updateField(field.key, v)}
                     disabled={isFieldDisabled(field)}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder={`Select ${field.label}`} />
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="" />
                     </SelectTrigger>
                     <SelectContent>
                       {getFieldOptions(field).map(opt => (
@@ -148,6 +148,7 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
                     type="date"
                     value={String(formData[field.key] ?? "")}
                     onChange={e => updateField(field.key, e.target.value)}
+                    className="w-full min-w-0 max-w-full appearance-none"
                   />
                 ) : field.type === "number" ? (
                   <Input
@@ -156,7 +157,7 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
                     step="0.01"
                     value={String(formData[field.key] ?? "")}
                     onChange={e => updateField(field.key, e.target.value)}
-                    placeholder={`Enter ${field.label}`}
+                    placeholder=""
                   />
                 ) : field.type === "file" ? (
                   <Input
@@ -172,7 +173,7 @@ export function AddEntryDialog<T extends Record<string, FieldValue>>({
                     type="text"
                     value={String(formData[field.key] ?? "")}
                     onChange={e => updateField(field.key, e.target.value)}
-                    placeholder={`Enter ${field.label}`}
+                    placeholder=""
                   />
                 )}
               </div>

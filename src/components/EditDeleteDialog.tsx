@@ -87,7 +87,7 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
       </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-x-clip overflow-y-auto flex flex-col items-center">
           <DialogHeader>
             <DialogTitle>Edit Entry</DialogTitle>
             <DialogDescription>
@@ -98,17 +98,17 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
             {fields.map((field) => (
               <div
                 key={field.key}
-                className="grid grid-cols-4 items-center gap-4"
+                className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-2 sm:gap-4"
               >
                 <Label htmlFor={field.key}>{field.label}</Label>
-                <div className="col-span-3">
+                <div className="sm:col-span-3 min-w-0 overflow-hidden">
                   {field.type === "select" && field.options ? (
                     <Select
                       value={formatValue(field.key, formData[field.key])}
                       onValueChange={(v) => updateField(field.key, v)}
                       disabled={field.disabled}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -128,6 +128,7 @@ export function EditDeleteDialog<T extends Record<string, FieldValue>>({
                         updateField(field.key, new Date(e.target.value))
                       }
                       disabled={field.disabled}
+                      className="w-full min-w-0 max-w-full appearance-none"
                     />
                   ) : field.type === "number" ? (
                     <Input

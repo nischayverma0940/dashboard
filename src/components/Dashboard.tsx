@@ -345,7 +345,7 @@ function FilterCard({
 }) {
   return (
     <div className="rounded-xl border bg-card overflow-hidden mb-6">
-      <div className="px-6 py-4 border-b bg-muted/40 flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-4 border-b bg-muted flex items-center justify-between">
         <h2 className="text-base font-semibold">{title ?? "Filters"}</h2>
         <Button
           variant="ghost"
@@ -357,14 +357,17 @@ function FilterCard({
           Clear All
         </Button>
       </div>
-      <div className="px-6 py-5 space-y-4">{children}</div>
+      <div className="px-4 sm:px-6 py-5 space-y-4">{children}</div>
     </div>
   )
 }
 
 function FilterRow({ children }: { children: React.ReactNode }) {
+  const count = React.Children.count(children)
   return (
-    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${React.Children.count(children)}, minmax(0, 1fr))` }}>
+    <div
+      className={`grid gap-4 ${count === 2 ? "grid-cols-2" : count === 3 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" : count >= 4 ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1"}`}
+    >
       {children}
     </div>
   )
@@ -372,7 +375,7 @@ function FilterRow({ children }: { children: React.ReactNode }) {
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 min-w-0 overflow-hidden">
       <Label className="text-sm font-medium">{label}</Label>
       {children}
     </div>
@@ -1153,7 +1156,7 @@ export function Dashboard() {
     isLatest: boolean
   ) => (
     <div key={table.allocationNumber} className={`mb-4 border rounded-lg px-4 pt-4 ${isLatest ? "border-primary/40 bg-primary/5" : "bg-muted/20"}`}>
-      <div className="flex justify-between items-center ms-2 mb-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 ms-2 mb-2">
         <div className="flex items-center gap-3">
           <h3 className="font-semibold text-lg">{table.allocationNumber}</h3>
           {isLatest && (
@@ -1163,7 +1166,7 @@ export function Dashboard() {
           )}
           <span className="text-xs text-muted-foreground">{formatDateDisplay(table.date)}</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex justify-between gap-4">
           <span className="font-semibold">Total: {formatINR(table.total)}</span>
           {canModify && (
             <EditDeleteDialog
@@ -1188,35 +1191,36 @@ export function Dashboard() {
   return (
     <>
       <div className="flex-1 flex flex-col items-center pb-8">
-        <div className="text-4xl font-extrabold text-center mb-2">
+        <div className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-extrabold text-center mb-2">
           Dr B R Ambedkar National Institute of Technology Jalandhar
         </div>
-        <h1 className="text-2xl font-bold text-center">Ministry Grants Receipts & Expenditure</h1>
+        <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-center">Ministry Grants Receipts & Expenditure</h1>
       </div>
 
       <div className="flex flex-col lg:flex-row items-center lg:justify-between lg:items-end gap-2 mb-6">
-        <div className="flex flex-row gap-2">
+        <div className="flex flex-row flex-wrap md:flex-nowrap gap-2 justify-center lg:justify-start">
           {TABS.map(tab => (
             <Button
               key={tab.value}
               variant={activeTab === tab.value ? "default" : "outline"}
               onClick={() => setActiveTab(tab.value)}
+              className="text-sm"
             >
               {tab.label}
             </Button>
           ))}
         </div>
-        <div className="w-full mt-6 flex flex-col items-center lg:items-end">
+        <div className="w-full mt-2 lg:mt-6 flex flex-col items-center lg:items-end">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
             Currency Scale
           </span>
-          <div className="inline-flex px-1 py-1 bg-muted rounded-lg border">
+          <div className="inline-flex flex-wrap px-1 py-1 bg-muted rounded-lg border">
             {SCALES.map(s => (
               <button
                 key={s}
                 onClick={() => setScale(s)}
                 className={cn(
-                  "px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize",
+                  "px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all capitalize",
                   scale === s ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -1236,7 +1240,7 @@ export function Dashboard() {
             <FilterRow>
               <FilterField label="Allocation No.">
                 <Input
-                  placeholder="Search allocation number"
+                  placeholder=""
                   value={allocationFilters.allocationNumber ?? ""}
                   onChange={e => setAllocationFilters(p => ({ ...p, allocationNumber: e.target.value }))}
                 />
@@ -1371,7 +1375,7 @@ export function Dashboard() {
             <FilterRow>
               <FilterField label="Sanction Order">
                 <Input
-                  placeholder="Search sanction order"
+                  placeholder=""
                   value={receiptTabFilters.sanctionOrder}
                   onChange={e => setReceiptTabFilters(p => ({ ...p, sanctionOrder: e.target.value }))}
                 />
@@ -1394,7 +1398,7 @@ export function Dashboard() {
               <FilterField label="Min Amount">
                 <Input
                   type="number"
-                  placeholder="Min ₹"
+                  placeholder=""
                   value={receiptTabFilters.amountMin}
                   onChange={e => setReceiptTabFilters(p => ({ ...p, amountMin: e.target.value }))}
                 />
@@ -1402,14 +1406,17 @@ export function Dashboard() {
               <FilterField label="Max Amount">
                 <Input
                   type="number"
-                  placeholder="Max ₹"
+                  placeholder=""
                   value={receiptTabFilters.amountMax}
                   onChange={e => setReceiptTabFilters(p => ({ ...p, amountMax: e.target.value }))}
                 />
               </FilterField>
+            </FilterRow>
+            <FilterRow>
               <FilterField label="From Date">
                 <Input
                   type="date"
+                  className="w-full min-w-0 max-w-full appearance-none"
                   value={receiptTabFilters.dateFrom}
                   max={receiptTabFilters.dateTo || undefined}
                   onChange={e => setReceiptTabFilters(p => ({ ...p, dateFrom: e.target.value }))}
@@ -1418,6 +1425,7 @@ export function Dashboard() {
               <FilterField label="To Date">
                 <Input
                   type="date"
+                  className="w-full min-w-0 max-w-full appearance-none"
                   value={receiptTabFilters.dateTo}
                   min={receiptTabFilters.dateFrom || undefined}
                   onChange={e => setReceiptTabFilters(p => ({ ...p, dateTo: e.target.value }))}
@@ -1455,14 +1463,14 @@ export function Dashboard() {
             <FilterRow>
               <FilterField label="Bill No.">
                 <Input
-                  placeholder="Search bill number"
+                  placeholder=""
                   value={expenditureTabFilters.billNo}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, billNo: e.target.value }))}
                 />
               </FilterField>
               <FilterField label="Voucher No.">
                 <Input
-                  placeholder="Search voucher number"
+                  placeholder=""
                   value={expenditureTabFilters.voucherNo}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, voucherNo: e.target.value }))}
                 />
@@ -1509,7 +1517,7 @@ export function Dashboard() {
               <FilterField label="Min Amount">
                 <Input
                   type="number"
-                  placeholder="Min ₹"
+                  placeholder=""
                   value={expenditureTabFilters.expenditureMin}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, expenditureMin: e.target.value }))}
                 />
@@ -1517,14 +1525,17 @@ export function Dashboard() {
               <FilterField label="Max Amount">
                 <Input
                   type="number"
-                  placeholder="Max ₹"
+                  placeholder=""
                   value={expenditureTabFilters.expenditureMax}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, expenditureMax: e.target.value }))}
                 />
               </FilterField>
+            </FilterRow>
+            <FilterRow>
               <FilterField label="From Date">
                 <Input
                   type="date"
+                  className="w-full min-w-0 max-w-full appearance-none"
                   value={expenditureTabFilters.dateFrom}
                   max={expenditureTabFilters.dateTo || undefined}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, dateFrom: e.target.value }))}
@@ -1533,6 +1544,7 @@ export function Dashboard() {
               <FilterField label="To Date">
                 <Input
                   type="date"
+                  className="w-full min-w-0 max-w-full appearance-none"
                   value={expenditureTabFilters.dateTo}
                   min={expenditureTabFilters.dateFrom || undefined}
                   onChange={e => setExpenditureTabFilters(p => ({ ...p, dateTo: e.target.value }))}
@@ -1682,20 +1694,22 @@ export function Dashboard() {
               </div>
 
               {filterType === "dateRange" && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5 min-w-0 overflow-hidden">
                     <Label className="text-sm">From Date</Label>
                     <Input
                       type="date"
+                      className="w-full min-w-0 max-w-full appearance-none"
                       value={startDate}
                       max={endDate || undefined}
                       onChange={e => setStartDate(e.target.value)}
                     />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0 overflow-hidden">
                     <Label className="text-sm">To Date</Label>
                     <Input
                       type="date"
+                      className="w-full min-w-0 max-w-full appearance-none"
                       value={endDate}
                       min={startDate || undefined}
                       onChange={e => setEndDate(e.target.value)}
@@ -1907,7 +1921,7 @@ export function Dashboard() {
         <div className="space-y-2">
           <div className="flex flex-col md:flex-row gap-2 items-stretch">
 
-            <div className="flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-1/2 lg:w-2/3" ref={chartWrapperRef}>
+            <div className="flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-full md:w-1/2 lg:w-2/3" ref={chartWrapperRef}>
               <h3 className="text-lg font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
               <div className="mb-2 w-full">
                 <ChartContainer
@@ -2032,7 +2046,7 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-1/2 lg:w-1/3">
+            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-full md:w-1/2 lg:w-1/3">
               <h3 className="text-lg font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
               <div className="relative flex flex-col items-center justify-center w-full" ref={pieWrapperRef}>
                 {expandedRows.size > 0 && (() => {
@@ -2204,7 +2218,7 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="overflow-hidden border rounded-lg">
+          <div className="overflow-hidden border rounded-lg overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted">
