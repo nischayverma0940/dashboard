@@ -1907,7 +1907,7 @@ export function Dashboard() {
         <div className="space-y-2">
           <div className="flex flex-col md:flex-row gap-2 items-stretch">
 
-            <div className="flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-2/3" ref={chartWrapperRef}>
+            <div className="flex flex-col justify-between items-center px-4 py-4 rounded-lg border w-1/2 lg:w-2/3" ref={chartWrapperRef}>
               <h3 className="text-lg font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
               <div className="mb-2 w-full">
                 <ChartContainer
@@ -2032,9 +2032,39 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-1/3">
+            <div className="flex-1 flex flex-col justify-between items-center px-4 py-4 rounded-lg border shrink-0 w-1/2 lg:w-1/3">
               <h3 className="text-lg font-semibold mb-4 text-muted-foreground self-start">Receipts vs Expenditure</h3>
               <div className="relative flex flex-col items-center justify-center w-full" ref={pieWrapperRef}>
+                {expandedRows.size > 0 && (() => {
+                  const cat = [...expandedRows][0]
+                  const row = summaryCategoryData.find(c => c.category === cat)
+                  const pct = row && row.totalReceipts > 0
+                    ? Math.min((row.totalExpenditure / row.totalReceipts) * 100, 100)
+                    : 0
+                  const holeSize = innerInnerR * 2
+                  return (
+                    <div
+                      className="pl-2 absolute inset-0 flex items-center justify-center pointer-events-none"
+                      style={{ paddingBottom: pieSize * 0 }}
+                    >
+                      <div
+                        className="flex flex-col items-center justify-center text-center gap-1/2"
+                        style={{ width: holeSize, maxWidth: holeSize }}
+                      >
+                        <span
+                          className="text-[9px] font-semibold leading-tight text-muted-foreground w-full text-center overflow-hidden"
+                          style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                        >
+                          {cat.slice(0, 5)}
+                        </span>
+                        <span className="text-[18px] font-extrabold leading-none tracking-tight">
+                          {pct.toFixed(1)}%
+                        </span>
+                        <span className="text-[9px] text-muted-foreground leading-none">utilized</span>
+                      </div>
+                    </div>
+                  )
+                })()}
                 <PieChart width={pieSize} height={pieSize}>
                   <Pie
                     data={innerPieData}
@@ -2045,6 +2075,20 @@ export function Dashboard() {
                     dataKey="value"
                     stroke="none"
                     isAnimationActive={true}
+                    label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload }: { cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number; payload: { label?: string } }) => {
+                      if (percent < 0.04 || payload?.label === "Balance") return null
+                      const RADIAN = Math.PI / 180
+                      const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+                      const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                      const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                      const name = (payload as { name?: string } | undefined)?.name
+                      return (
+                        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={9} fontWeight={700}>
+                          {name ? name.slice(0, 5) : ""}
+                        </text>
+                      )
+                    }}
+                    labelLine={false}
                   >
                     {innerPieData.map((entry, index) => (
                       <Cell key={`inner-${index}`} fill={entry.fill} />
